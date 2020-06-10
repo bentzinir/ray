@@ -11,6 +11,7 @@ OPTIMIZER_SHARED_CONFIGS = [
 
 # yapf: disable
 # __sphinx_doc_begin__
+# nirbz: testing repository for initial commit
 DEFAULT_CONFIG = with_common_config({
     # === Model ===
     "twin_q": True,
