@@ -10,6 +10,11 @@ def _import_sac():
     return sac.SACTrainer
 
 
+def _import_sac_ensemble():
+    from ray.rllib.agents import sac
+    return sac.SACEnsembleTrainer
+
+
 def _import_appo():
     from ray.rllib.agents import ppo
     return ppo.APPOTrainer
@@ -97,6 +102,7 @@ def _import_marwil():
 
 ALGORITHMS = {
     "SAC": _import_sac,
+    "SAC_Ensemble": _import_sac_ensemble,
     "DDPG": _import_ddpg,
     "APEX_DDPG": _import_apex_ddpg,
     "TD3": _import_td3,
