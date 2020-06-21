@@ -37,6 +37,6 @@ if __name__ == "__main__":
             results = trainer.train()  # distributed training step
             print(f"Iter: {results['training_iteration']}, R: {results['episode_reward_mean']}")
     else:
-        a=1
+        a=18
         tune.run(SACEnsembleTrainer, config=config, verbose=args.verbose)
         # tune.run(SACTrainer, config=config, verbose=args.verbose)
