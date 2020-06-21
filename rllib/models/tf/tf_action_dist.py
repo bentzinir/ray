@@ -95,12 +95,13 @@ class Categorical(TFActionDistribution):
 class MultiCategorical(TFActionDistribution):
     """MultiCategorical distribution for MultiDiscrete action spaces."""
 
-    def __init__(self, inputs, model, input_lens):
+    def __init__(self, inputs, model):
         # skip TFActionDistribution init
         ActionDistribution.__init__(self, inputs, model)
+        input_lens = inputs.get_shape().as_list()[1]
         self.cats = [
             Categorical(input_, model)
-            for input_ in tf.split(inputs, input_lens, axis=1)
+            for input_ in tf.unstack(inputs, input_lens, axis=1)
         ]
         self.sample_op = self._build_sample_op()
         self.sampled_action_logp_op = self.logp(self.sample_op)
@@ -330,6 +331,60 @@ class SquashedGaussian(TFActionDistribution):
     @override(ActionDistribution)
     def required_model_output_shape(action_space, model_config):
         return np.prod(action_space.shape) * 2
+
+
+class MultiSquashedGaussian(TFActionDistribution):
+    """MultiGaussian distribution for MultiGaussian action spaces."""
+
+    def __init__(self, inputs, model, input_lens):
+        # skip TFActionDistribution init
+        ActionDistribution.__init__(self, inputs, model)
+        self.gausses = [
+            SquashedGaussian(tf.squeeze(input_, axis=1), model)
+            for input_ in tf.split(inputs, input_lens, axis=1)
+        ]
+        self.sample_op = self._build_sample_op()
+        self.sampled_action_logp_op = self.logp(self.sample_op)
+
+    @override(ActionDistribution)
+    def deterministic_sample(self):
+        return tf.stack(
+            [gauss.deterministic_sample() for gauss in self.gausses], axis=1)
+
+    @override(ActionDistribution)
+    def logp(self, actions):
+        # If tensor is provided, unstack it into list.
+        if isinstance(actions, tf.Tensor):
+            actions = tf.unstack(actions, axis=1)
+        logps = tf.stack(
+            [gauss.logp(act) for gauss, act in zip(self.gausses, actions)])
+        return tf.reduce_sum(logps, axis=0)
+
+    @override(ActionDistribution)
+    def multi_entropy(self):
+        assert False, "we yet know how to calculate multi entropy"
+        return tf.stack([gauss.entropy() for gauss in self.gausses], axis=1)
+
+    @override(ActionDistribution)
+    def entropy(self):
+        assert False, "we yet know how to calculate entropy"
+        return tf.reduce_sum(self.multi_entropy(), axis=1)
+
+    @override(ActionDistribution)
+    def multi_kl(self, other):
+        assert False, "we yet know how to calculate multi KL"
+        return tf.stack(
+            [gauss.kl(oth_gauss) for gauss, oth_gauss in zip(self.gausses, other.gausses)],
+            axis=1)
+
+    @override(ActionDistribution)
+    def kl(self, other):
+        assert False, "we yet know how to calculate KL"
+        return tf.reduce_sum(self.multi_kl(other), axis=1)
+
+    @override(TFActionDistribution)
+    def _build_sample_op(self):
+        return tf.stack([gauss.sample() for gauss in self.gausses], axis=1)
 
 
 class Beta(TFActionDistribution):
