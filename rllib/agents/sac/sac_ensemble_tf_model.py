@@ -33,7 +33,8 @@ class SACEnsembleTFModel(TFModelV2):
                  initial_alpha=1.0,
                  target_entropy=None,
                  ensemble_size=1,
-                 shared_body=False):
+                 shared_body=False,
+                 constant_alpha=False):
         """Initialize variables of this model.
 
         Extra model kwargs:
@@ -58,7 +59,7 @@ class SACEnsembleTFModel(TFModelV2):
             self.discrete = True
             action_outs = q_outs = self.action_dim
         else:
-            self.action_dim = np.product(action_space.shape)
+            self.action_dim = np.product(action_space.shape[1:])
             self.discrete = False
             action_outs = 2 * self.action_dim
             q_outs = 1
@@ -69,9 +70,9 @@ class SACEnsembleTFModel(TFModelV2):
         self.twin_q = twin_q
         self.ensemble_size = ensemble_size
         self.shared_body = shared_body
+        self.constant_alpha = constant_alpha
         self.action_model = [None] * ensemble_size
         self.shift_and_log_scale_diag = [None] * ensemble_size
-
 
         if self.shared_body:
             x = None
@@ -151,24 +152,31 @@ class SACEnsembleTFModel(TFModelV2):
             else:
                 self.twin_q_net[eidx] = None
 
-        log_alpha_vec = [np.log(initial_alpha)] * ensemble_size
-        log_alpha_vec = np.expand_dims(log_alpha_vec, axis=1)
-        self.log_alpha = tf.Variable(log_alpha_vec, dtype=tf.float32, name="log_alpha")
-        self.alpha = tf.exp(self.log_alpha)
-        self.register_variables([self.log_alpha])
-
         # Auto-calculate the target entropy.
         if target_entropy is None or target_entropy == "auto":
             # See hyperparams in [2] (README.md).
             if self.discrete:
                 target_entropy = 0.98 * np.array(
                     -np.log(1.0 / self.action_dim), dtype=np.float32)
-                target_entropy = target_entropy / (self.ensemble_size * 2)
+                # TODO: find the correct entropy value for the ensemble
             # See [1] (README.md).
             else:
-                assert False, "un-debugged code"
-                target_entropy = -np.prod(action_space.shape)
+                # TODO: find the correct entropy value for the ensemble
+                target_entropy = -np.prod(action_space.shape[1:])
         self.target_entropy = target_entropy
+
+        if constant_alpha:
+            initial_alpha = 2 / self.ensemble_size
+            print("=================CONSTANT ALPHA====================")
+
+        print(f"target entropy: {self.target_entropy}, initial alpha: {initial_alpha}")
+
+        log_alpha_vec = [np.log(initial_alpha)] * ensemble_size
+        log_alpha_vec = np.expand_dims(log_alpha_vec, axis=1)
+        self.log_alpha = tf.Variable(log_alpha_vec, dtype=tf.float32, name="log_alpha")
+        self.alpha = tf.exp(self.log_alpha)
+        if not constant_alpha:
+            self.register_variables([self.log_alpha])
 
     def get_q_values(self, model_out, actions=None):
         """Return the Q estimates for the most recent forward pass.
@@ -185,10 +193,13 @@ class SACEnsembleTFModel(TFModelV2):
         Returns:
             tensor of shape [BATCH_SIZE].
         """
+        # TODO: consider remove casting after debug
+        model_out = tf.cast(model_out, tf.float32)
         if actions is not None:
-            q_value_list = [self.q_net[eidx]([model_out, actions]) for eidx in range(self.ensemble_size)]
+            actions = tf.unstack(actions, axis=1)
+            q_value_list = [qnet([model_out, act]) for qnet, act in zip(self.q_net, actions)]
         else:
-            q_value_list = [self.q_net[eidx](model_out) for eidx in range(self.ensemble_size)]
+            q_value_list = [qnet(model_out) for qnet in self.q_net]
         return tf.stack(q_value_list, axis=1)
 
     def get_twin_q_values(self, model_out, actions=None):
@@ -206,10 +217,13 @@ class SACEnsembleTFModel(TFModelV2):
         Returns:
             tensor of shape [BATCH_SIZE].
         """
+        # TODO: consider remove casting after debug
+        model_out = tf.cast(model_out, tf.float32)
         if actions is not None:
-            twin_q_value_list = [self.twin_q_net[eidx]([model_out, actions]) for eidx in range(self.ensemble_size)]
+            actions = tf.unstack(actions, axis=1)
+            twin_q_value_list = [twin_qnet([model_out, act]) for twin_qnet, act in zip(self.twin_q_net, actions)]
         else:
-            twin_q_value_list = [self.twin_q_net[eidx](model_out) for eidx in range(self.ensemble_size)]
+            twin_q_value_list = [twin_qnet(model_out) for twin_qnet in self.twin_q_net]
         return tf.stack(twin_q_value_list, axis=1)
 
     def get_policy_output(self, model_out):

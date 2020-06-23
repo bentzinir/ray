@@ -23,21 +23,21 @@ def policy_mapper(agent_id):
 
 if __name__ == "__main__":
     args, extra_args = parser.parse_known_args()
-    args.env = 'CartPole-v0'
+    # args.env = 'CartPole-v0'
+    args.env = 'HalfCheetah-v3'
     # args.debug = True
     env = gym.make(args.env)
 
     config = {
             'env': args.env,
-            "multiagent": {
-                "policy_mapping_fn": lambda x: "worker_p1" if x == 0 else "worker_p2",
-                "policy_graphs": {
-                    "worker_p1": (SACTFPolicy, env.observation_space, env.action_space, {}),
-                    "worker_p2": (SACTFPolicy, env.observation_space, env.action_space, {}),
-                },
-                "policies_to_train": ["worker_p1", "worker_p2"],
-            },
-            'ensemble_size': 1,
+            # "multiagent": {
+            #     "policy_mapping_fn": lambda x: "worker_p1" if x == 0 else "worker_p2",
+            #     "policies": {
+            #         "worker_p1": (SACTFPolicy, env.observation_space, env.action_space, {}),
+            #         "worker_p2": (SACTFPolicy, env.observation_space, env.action_space, {}),
+            #     },
+            #     "policies_to_train": ["worker_p1", "worker_p2"],
+            # },
             'eager': args.eager
     }
 

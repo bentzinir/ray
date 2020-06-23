@@ -121,6 +121,7 @@ DEFAULT_CONFIG = with_common_config({
     "grad_norm_clipping": DEPRECATED_VALUE,
     "partial_ensemble_size": 1,
     "shared_actor_body": False,
+    "constant_alpha": False
 })
 # __sphinx_doc_end__
 # yapf: enable
@@ -132,7 +133,6 @@ def get_policy_class(config):
         return
     else:
         return SACEnsembleTFPolicy
-        # return SACTFPolicy
 
 def validate_config(config):
     if config.get("grad_norm_clipping", DEPRECATED_VALUE) != DEPRECATED_VALUE:
@@ -159,7 +159,6 @@ SACEnsembleTrainer = GenericOffPolicyTrainer.with_updates(
     name="SAC_Ensemble",
     default_config=DEFAULT_CONFIG,
     validate_config=validate_config,
-    # default_policy=SACEnsembleTFPolicy,
-    default_policy=SACTFPolicy,
+    default_policy=SACEnsembleTFPolicy,
     get_policy_class=get_policy_class,
 )

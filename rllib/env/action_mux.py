@@ -20,6 +20,7 @@ class ActionMux(gym.Wrapper):
 
     def step(self, action_dict):
         action = action_dict[self.active_policy]
+        # print(action)
         observation, reward, done, info = self.env.step(action)
         return observation, reward, done, info
 
