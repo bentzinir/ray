@@ -181,7 +181,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             q_tp1_best
     # Continuous actions case.
     else:
-        # Sample simgle actions from distribution.
+        # Sample single actions from distribution.
         action_dist_class = get_dist_class(policy.config, policy.action_space)
         action_dist_t = action_dist_class(
             model.get_policy_output(model_out_t), policy.model)

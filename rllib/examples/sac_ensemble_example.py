@@ -16,10 +16,13 @@ parser.add_argument("--ensemble_size", type=int, default=1)
 parser.add_argument("--verbose", type=int, default=1)
 parser.add_argument("--num_workers", type=int, default=1)
 parser.add_argument("--num_gpus", type=int, default=1)
+parser.add_argument("--target_entropy", type=float, default=None)
+parser.add_argument("--constant_alpha", action="store_true")
 
 if __name__ == "__main__":
     args, extra_args = parser.parse_known_args()
     # args.env = 'CartPole-v0'
+    # args.env = 'HalfCheetah-v3'
     config = {
             'env': args.env,
             'num_workers': args.num_workers,
@@ -27,9 +30,16 @@ if __name__ == "__main__":
             'partial_ensemble_size': args.ensemble_size,
             'shared_actor_body': args.shared_actor_body,
             'eager': args.eager,
+            'target_entropy': args.target_entropy,
+            'constant_alpha': args.constant_alpha,
     }
 
-    ray.init(num_cpus=args.num_cpus or None)
+    ray.init(num_cpus=args.num_cpus or None,
+             # local_mode=True,
+             # redis_max_memory=int(4e9),
+             # object_store_memory=int(10e9),
+             # memory=int(16e9)
+             )
     if args.debug:
         trainer = SACEnsembleTrainer(config=config)
         i = 0
@@ -37,6 +47,5 @@ if __name__ == "__main__":
             results = trainer.train()  # distributed training step
             print(f"Iter: {results['training_iteration']}, R: {results['episode_reward_mean']}")
     else:
-        a=18
         tune.run(SACEnsembleTrainer, config=config, verbose=args.verbose)
         # tune.run(SACTrainer, config=config, verbose=args.verbose)

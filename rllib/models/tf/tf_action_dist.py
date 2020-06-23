@@ -118,7 +118,10 @@ class MultiCategorical(TFActionDistribution):
             actions = tf.unstack(tf.cast(actions, tf.int32), axis=1)
         logps = tf.stack(
             [cat.logp(act) for cat, act in zip(self.cats, actions)])
-        return tf.reduce_sum(logps, axis=0)
+        print("Caution: logps are reduced across ensemble members.\
+        Do not cal action_dist.logp function but implement from scratch instead.")
+        logps = tf.reduce_sum(logps, axis=0)
+        return logps
 
     @override(ActionDistribution)
     def multi_entropy(self):
@@ -336,9 +339,10 @@ class SquashedGaussian(TFActionDistribution):
 class MultiSquashedGaussian(TFActionDistribution):
     """MultiGaussian distribution for MultiGaussian action spaces."""
 
-    def __init__(self, inputs, model, input_lens):
+    def __init__(self, inputs, model):
         # skip TFActionDistribution init
         ActionDistribution.__init__(self, inputs, model)
+        input_lens = inputs.get_shape().as_list()[1]
         self.gausses = [
             SquashedGaussian(tf.squeeze(input_, axis=1), model)
             for input_ in tf.split(inputs, input_lens, axis=1)
@@ -352,13 +356,18 @@ class MultiSquashedGaussian(TFActionDistribution):
             [gauss.deterministic_sample() for gauss in self.gausses], axis=1)
 
     @override(ActionDistribution)
-    def logp(self, actions):
+    def logp(self, actions, reduce=True):
         # If tensor is provided, unstack it into list.
         if isinstance(actions, tf.Tensor):
             actions = tf.unstack(actions, axis=1)
         logps = tf.stack(
-            [gauss.logp(act) for gauss, act in zip(self.gausses, actions)])
-        return tf.reduce_sum(logps, axis=0)
+            [gauss.logp(act) for gauss, act in zip(self.gausses, actions)], axis=-1)
+        if reduce:
+            logps = tf.reduce_sum(logps, axis=0)
+        else:
+            print("Caution: logps are reduced across ensemble members by default. \
+                use reduce=False to avoid the reduction.")
+        return logps
 
     @override(ActionDistribution)
     def multi_entropy(self):
