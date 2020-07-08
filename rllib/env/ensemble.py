@@ -23,16 +23,24 @@ class Ensemble(MultiAgentEnv, gym.Wrapper):
         observation, reward, done, info = self.env.step(action)
 
         done = {"__all__": done}
-        reward = self._dictionize(reward)
-        observation = self._dictionize(observation)
-        info = self._dictionize(info)
+        info["active_policy"] = self.active_policy
 
-        return observation, reward, done, info
+        dictionize = True
+        if dictionize:
+            rewards = self._dictionize(reward / self.ensemble_size)
+            observation = self._dictionize(observation)
+            info = self._dictionize(info)
+        else:
+            rewards = {self.active_policy: reward}
+            observation = {self.active_policy: observation}
+            info = {self.active_policy: info}
+
+        return observation, rewards, done, info
 
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
         self.active_policy = np.random.choice(range(self.ensemble_size))
-        print(f"Current Active Policy: {self.active_policy}")
+        # print(f"Current Active Policy: {self.active_policy}")
         return self._dictionize(obs)
 
     def _dictionize(self, val):

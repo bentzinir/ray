@@ -118,8 +118,8 @@ class MultiCategorical(TFActionDistribution):
             actions = tf.unstack(tf.cast(actions, tf.int32), axis=1)
         logps = tf.stack(
             [cat.logp(act) for cat, act in zip(self.cats, actions)])
-        print("Caution: logps are reduced across ensemble members.\
-        Do not cal action_dist.logp function but implement from scratch instead.")
+        print("Caution: logps are reduced across ensemble members. "
+              "Do not call action_dist.logp function but implement from scratch instead.")
         logps = tf.reduce_sum(logps, axis=0)
         return logps
 
@@ -365,8 +365,8 @@ class MultiSquashedGaussian(TFActionDistribution):
         if reduce:
             logps = tf.reduce_sum(logps, axis=0)
         else:
-            print("Caution: logps are reduced across ensemble members by default. \
-                use reduce=False to avoid the reduction.")
+            print("Caution: logps are reduced across ensemble members by default. "
+                  "Use reduce=False to avoid the reduction")
         return logps
 
     @override(ActionDistribution)

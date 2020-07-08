@@ -1,4 +1,4 @@
-from gym.spaces import Box, Discrete, MultiDiscrete
+from gym.spaces import Box, MultiDiscrete
 import logging
 
 import ray
@@ -7,13 +7,11 @@ from ray.rllib.agents.ddpg.ddpg_tf_policy import ComputeTDErrorMixin, \
     TargetNetworkMixin
 from ray.rllib.agents.dqn.dqn_tf_policy import postprocess_nstep_and_prio
 from ray.rllib.agents.sac.sac_ensemble_tf_model import SACEnsembleTFModel
-from ray.rllib.agents.sac.sac_tf_model import SACTFModel
 from ray.rllib.agents.sac.sac_torch_model import SACTorchModel
 from ray.rllib.models import ModelCatalog
-from ray.rllib.models.tf.tf_action_dist import Beta, Categorical, MultiCategorical, \
-    DiagGaussian, SquashedGaussian, MultiSquashedGaussian
+from ray.rllib.models.tf.tf_action_dist import Beta, MultiCategorical, \
+    DiagGaussian, MultiSquashedGaussian
 from ray.rllib.policy.sample_batch import SampleBatch
-from ray.rllib.policy.tf_policy_template import build_tf_policy
 from ray.rllib.policy.tf_ensemble_policy_template import build_tf_ensemble_policy
 from ray.rllib.utils.error import UnsupportedSpaceException
 from ray.rllib.utils.framework import try_import_tf, try_import_tfp
@@ -66,8 +64,8 @@ def build_sac_ensemble_model(policy, obs_space, action_space, config):
         num_outputs=num_outputs,
         model_config=config["model"],
         framework=config["framework"],
-        model_interface=SACTorchModel if config["framework"] == "torch" else SACEnsembleTFModel,
-        # model_interface=SACTorchModel if config["framework"] == "torch" else SACTFModel,
+        model_interface=SACTorchModel
+        if config["framework"] == "torch" else SACEnsembleTFModel,
         name="sac_model",
         actor_hidden_activation=config["policy_model"]["fcnet_activation"],
         actor_hiddens=config["policy_model"]["fcnet_hiddens"],
@@ -77,8 +75,8 @@ def build_sac_ensemble_model(policy, obs_space, action_space, config):
         initial_alpha=config["initial_alpha"],
         target_entropy=config["target_entropy"],
         ensemble_size=config["partial_ensemble_size"],
-        shared_body=config["shared_actor_body"],
-        constant_alpha=config["constant_alpha"])
+        shared_actor_body=config["shared_actor_body"],
+        constant_alpha=config["constant_alpha"],)
 
     policy.target_model = ModelCatalog.get_model_v2(
         obs_space=obs_space,
@@ -86,8 +84,8 @@ def build_sac_ensemble_model(policy, obs_space, action_space, config):
         num_outputs=num_outputs,
         model_config=config["model"],
         framework=config["framework"],
-        model_interface=SACTorchModel if config["framework"] == "torch" else SACEnsembleTFModel,
-        # model_interface=SACTorchModel if config["framework"] == "torch" else SACTFModel,
+        model_interface=SACTorchModel
+        if config["framework"] == "torch" else SACEnsembleTFModel,
         name="target_sac_model",
         actor_hidden_activation=config["policy_model"]["fcnet_activation"],
         actor_hiddens=config["policy_model"]["fcnet_hiddens"],
@@ -97,8 +95,8 @@ def build_sac_ensemble_model(policy, obs_space, action_space, config):
         initial_alpha=config["initial_alpha"],
         target_entropy=config["target_entropy"],
         ensemble_size=config["partial_ensemble_size"],
-        shared_body=config["shared_actor_body"],
-        constant_alpha=config["constant_alpha"])
+        shared_actor_body=config["shared_actor_body"],
+        constant_alpha=config["constant_alpha"],)
 
     return policy.model
 
@@ -107,6 +105,9 @@ def postprocess_trajectory(policy,
                            sample_batch,
                            other_agent_batches=None,
                            episode=None):
+    import numpy as np
+    if 'members' not in sample_batch:
+        sample_batch['members'] = np.ones_like(sample_batch[SampleBatch.REWARDS]).astype(np.int32)
     return postprocess_nstep_and_prio(policy, sample_batch)
 
 
@@ -115,8 +116,8 @@ def get_dist_class(config, action_space):
         return MultiCategorical
     else:
         if config["normalize_actions"]:
-            # return SquashedGaussian if not config["_use_beta_distribution"] else Beta
-            return MultiSquashedGaussian if not config["_use_beta_distribution"] else Beta
+            return MultiSquashedGaussian if \
+                not config["_use_beta_distribution"] else Beta
         else:
             return DiagGaussian
 
@@ -157,6 +158,13 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         "is_training": policy._get_is_training_placeholder(),
     }, [], None)
 
+    # Broadcast the action of active ensemble member to all other ensemble members,
+    # because this action is the one responsible for the transition
+    E = policy.config['partial_ensemble_size']
+    dones = tf.tile(tf.expand_dims(train_batch[SampleBatch.DONES], 1), [1, E])
+    rewards = tf.tile(tf.expand_dims(train_batch[SampleBatch.REWARDS], 1), [1, E])
+    member_mat = tf.one_hot(train_batch['members'], depth=E)
+
     # Discrete case.
     if model.discrete:
         # Get all action probs directly from pi and form their logp.
@@ -174,31 +182,23 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             twin_q_tp1 = policy.target_model.get_twin_q_values(
                 target_model_out_tp1)
             q_tp1 = tf.reduce_min((q_tp1, twin_q_tp1), axis=0)
-
-        ########################################
-        ##### CROSS ENTROPY REGULARIZATION #####
-        # old:
+        ######################### CROSS ENTROPY #########################
         # q_tp1 -= model.alpha * log_pis_tp1
-
-        # new:
-        ensemble_size = log_pis_tp1.get_shape().as_list()[1]
-        x1 = tf.reduce_mean(log_pis_tp1, axis=1, keepdims=True)
-        ens_log_pis_tp1 = tf.keras.backend.repeat_elements(x1, rep=ensemble_size, axis=1)
-        q_tp1 -= model.alpha * ens_log_pis_tp1
-        ########################################
-
+        q_tp1 -= model.alpha * tf.tile(tf.reduce_mean(log_pis_tp1, axis=1, keepdims=True), [1, E, 1])
+        #################################################################
         # Actually selected Q-values (from the actions batch).
-        one_hot = tf.one_hot(
-            train_batch[SampleBatch.ACTIONS], depth=q_t.shape.as_list()[-1])
+        actions_mat = tf.cast(member_mat, train_batch[SampleBatch.ACTIONS].dtype) * train_batch[SampleBatch.ACTIONS]
+        actions = tf.reduce_sum(actions_mat, axis=1)
+        bcast_actions = tf.tile(tf.expand_dims(actions, 1), [1, E])
+        one_hot = tf.one_hot(bcast_actions, depth=q_t.shape.as_list()[-1])
         q_t_selected = tf.reduce_sum(q_t * one_hot, axis=-1)
         if policy.config["twin_q"]:
             twin_q_t_selected = tf.reduce_sum(twin_q_t * one_hot, axis=-1)
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
         q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
         q_tp1_best_masked = \
-            (1.0 - tf.cast(tf.expand_dims(train_batch[SampleBatch.DONES], axis=1), tf.float32)) * \
+            (1.0 - tf.cast(dones, tf.float32)) * \
             q_tp1_best
-
     # Continuous actions case.
     else:
         # Sample single actions from distribution.
@@ -215,10 +215,13 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         log_pis_tp1 = tf.expand_dims(action_dist_tp1.logp(policy_tp1, reduce=False), -1)
 
         # Q-values for the actually selected actions.
-        q_t = model.get_q_values(model_out_t, train_batch[SampleBatch.ACTIONS])
+        ex_member_mat = tf.tile(tf.expand_dims(member_mat, 2), [1, 1, policy_t.shape.as_list()[-1]])
+        active_actions = tf.reduce_sum(ex_member_mat * train_batch[SampleBatch.ACTIONS], axis=1, keepdims=True)
+        active_action_mat = tf.tile(active_actions, [1, E, 1])
+        q_t = model.get_q_values(model_out_t, active_action_mat)
         if policy.config["twin_q"]:
             twin_q_t = model.get_twin_q_values(
-                model_out_t, train_batch[SampleBatch.ACTIONS])
+                model_out_t, active_action_mat)
 
         # Q-values for current policy in given current state.
         q_t_det_policy = model.get_q_values(model_out_t, policy_t)
@@ -240,29 +243,18 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         q_t_selected = tf.squeeze(q_t, axis=len(q_t.shape) - 1)
         if policy.config["twin_q"]:
             twin_q_t_selected = tf.squeeze(twin_q_t, axis=len(q_t.shape) - 1)
-
-        ########################################
-        ##### CROSS ENTROPY REGULARIZATION #####
-        # old:
+        ######################### CROSS ENTROPY #########################
         # q_tp1 -= model.alpha * log_pis_tp1
-
-        # new:
-        ensemble_size = log_pis_tp1.get_shape().as_list()[1]
-        x1 = tf.reduce_mean(log_pis_tp1, axis=1, keepdims=True)
-        ens_log_pis_tp1 = tf.keras.backend.repeat_elements(x1, rep=ensemble_size, axis=1)
-        q_tp1 -= model.alpha * ens_log_pis_tp1
-        ########################################
-
+        q_tp1 -= model.alpha * tf.tile(tf.reduce_mean(log_pis_tp1, axis=1, keepdims=True), [1, E, 1])
+        #################################################################
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
-        q_tp1_best_masked = (1.0 - tf.cast(tf.expand_dims(train_batch[SampleBatch.DONES], axis=1),
-                                           tf.float32)) * q_tp1_best
+        q_tp1_best_masked = (1.0 - tf.cast(dones, tf.float32)) * q_tp1_best
 
     assert policy.config["n_step"] == 1, "TODO(hartikainen) n_step > 1"
 
     # compute RHS of bellman equation
     q_t_selected_target = tf.stop_gradient(
-        tf.expand_dims(train_batch[SampleBatch.REWARDS], axis=1) +
-        policy.config["gamma"]**policy.config["n_step"] * q_tp1_best_masked)
+        rewards + policy.config["gamma"]**policy.config["n_step"] * q_tp1_best_masked)
 
     # Compute the TD-error (potentially clipped).
     base_td_error = tf.abs(q_t_selected - q_t_selected_target)
@@ -273,28 +265,28 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         td_error = base_td_error
 
     critic_loss = [
-        tf.losses.mean_squared_error(
-            labels=q_t_selected_target, predictions=q_t_selected, weights=0.5)
+        # tf.losses.mean_squared_error(labels=q_t_selected_target, predictions=q_t_selected, weights=0.5)
+        0.5 * tf.square(q_t_selected_target - q_t_selected)
     ]
     if policy.config["twin_q"]:
         critic_loss.append(
-            tf.losses.mean_squared_error(
-                labels=q_t_selected_target,
-                predictions=twin_q_t_selected,
-                weights=0.5))
+            # tf.losses.mean_squared_error(labels=q_t_selected_target, predictions=twin_q_t_selected, weights=0.5)
+            0.5 * tf.square(q_t_selected_target - twin_q_t_selected)
+        )
 
     # Alpha- and actor losses.
     # Note: In the papers, alpha is used directly, here we take the log.
     # Discrete case: Multiply the action probs as weights with the original
     # loss terms (no expectations needed).
     if model.discrete:
-        if not model.constant_alpha:
-            alpha_loss = tf.reduce_mean(
-                tf.reduce_sum(
-                    tf.multiply(
-                        tf.stop_gradient(policy_t), -model.log_alpha *
-                        tf.stop_gradient(log_pis_t + model.target_entropy)),
-                    axis=-1))
+        ens_pis_t = tf.reduce_mean(policy_t, axis=1)
+        ens_log_pis_t = tf.log(ens_pis_t)
+        alpha_loss = tf.reduce_mean(
+            tf.reduce_sum(
+                tf.multiply(
+                    tf.stop_gradient(ens_pis_t), -model.log_alpha *
+                    tf.stop_gradient(ens_log_pis_t + model.target_entropy)),
+                axis=-1))
         actor_loss = tf.reduce_mean(
             tf.reduce_sum(
                 tf.multiply(
@@ -304,10 +296,9 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
                     model.alpha * log_pis_t - tf.stop_gradient(q_t)),
                 axis=-1))
     else:
-        if not model.constant_alpha:
-            alpha_loss = -tf.reduce_mean(
-                model.log_alpha *
-                tf.stop_gradient(log_pis_t + model.target_entropy))
+        alpha_loss = -tf.reduce_mean(
+            model.log_alpha *
+            tf.stop_gradient(log_pis_t + model.target_entropy))
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
 
     # save for stats function
@@ -316,17 +307,13 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.td_error = td_error
     policy.actor_loss = actor_loss
     policy.critic_loss = critic_loss
+    policy.alpha_loss = alpha_loss
     policy.alpha_value = model.alpha
     policy.target_entropy = model.target_entropy
-    if not model.constant_alpha:
-        policy.alpha_loss = alpha_loss
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
-    loss = actor_loss + tf.add_n(critic_loss)
-    if not model.constant_alpha:
-        loss += alpha_loss
-    return loss
+    return actor_loss + tf.add_n(critic_loss) + alpha_loss
 
 
 def gradients(policy, optimizer, loss):
@@ -356,12 +343,11 @@ def gradients(policy, optimizer, loss):
                 policy.critic_loss[0],
                 var_list=policy.model.q_variables(),
                 clip_val=policy.config["grad_clip"])
-        if not policy.model.constant_alpha:
-            alpha_grads_and_vars = minimize_and_clip(
-                optimizer,
-                policy.alpha_loss,
-                var_list=[policy.model.log_alpha],
-                clip_val=policy.config["grad_clip"])
+        alpha_grads_and_vars = minimize_and_clip(
+            optimizer,
+            policy.alpha_loss,
+            var_list=[policy.model.log_alpha],
+            clip_val=policy.config["grad_clip"])
     else:
         actor_grads_and_vars = policy._actor_optimizer.compute_gradients(
             policy.actor_loss, var_list=policy.model.policy_variables())
@@ -377,21 +363,19 @@ def gradients(policy, optimizer, loss):
             critic_grads_and_vars = policy._critic_optimizer[
                 0].compute_gradients(
                     policy.critic_loss[0], var_list=policy.model.q_variables())
-        if not policy.model.constant_alpha:
-            alpha_grads_and_vars = policy._alpha_optimizer.compute_gradients(
-                policy.alpha_loss, var_list=[policy.model.log_alpha])
+        alpha_grads_and_vars = policy._alpha_optimizer.compute_gradients(
+            policy.alpha_loss, var_list=[policy.model.log_alpha])
 
     # save these for later use in build_apply_op
     policy._actor_grads_and_vars = [(g, v) for (g, v) in actor_grads_and_vars
                                     if g is not None]
     policy._critic_grads_and_vars = [(g, v) for (g, v) in critic_grads_and_vars
                                      if g is not None]
-    if not policy.model.constant_alpha:
-        policy._alpha_grads_and_vars = [(g, v) for (g, v) in alpha_grads_and_vars
-                                        if g is not None]
-    grads_and_vars = (policy._actor_grads_and_vars + policy._critic_grads_and_vars)
-    if not policy.model.constant_alpha:
-        grads_and_vars += policy._alpha_grads_and_vars
+    policy._alpha_grads_and_vars = [(g, v) for (g, v) in alpha_grads_and_vars
+                                    if g is not None]
+    grads_and_vars = (
+        policy._actor_grads_and_vars + policy._critic_grads_and_vars +
+        policy._alpha_grads_and_vars)
     return grads_and_vars
 
 
@@ -410,16 +394,11 @@ def apply_gradients(policy, optimizer, grads_and_vars):
         critic_apply_ops = [
             policy._critic_optimizer[0].apply_gradients(cgrads)
         ]
-    if not policy.model.constant_alpha:
-        alpha_apply_ops = policy._alpha_optimizer.apply_gradients(
-            policy._alpha_grads_and_vars,
-            global_step=tf.train.get_or_create_global_step())
-    actor_ops = [actor_apply_ops]
-    if not policy.model.constant_alpha:
-        actor_ops += [alpha_apply_ops]
-    apply_ops = tf.group(actor_ops + critic_apply_ops)
-    apply_ops = tf.group(apply_ops)
-    return apply_ops
+
+    alpha_apply_ops = policy._alpha_optimizer.apply_gradients(
+        policy._alpha_grads_and_vars,
+        global_step=tf.train.get_or_create_global_step())
+    return tf.group([actor_apply_ops, alpha_apply_ops] + critic_apply_ops)
 
 
 def stats(policy, train_batch):
@@ -429,7 +408,7 @@ def stats(policy, train_batch):
         "mean_td_error": tf.reduce_mean(policy.td_error),
         "actor_loss": tf.reduce_mean(policy.actor_loss),
         "critic_loss": tf.reduce_mean(policy.critic_loss),
-        "alpha_loss": tf.constant(0) if policy.model.constant_alpha else tf.reduce_mean(policy.alpha_loss),
+        "alpha_loss": tf.reduce_mean(policy.alpha_loss),
         "alpha_value": tf.reduce_mean(policy.alpha_value),
         "target_entropy": tf.constant(policy.target_entropy),
         "mean_q": tf.reduce_mean(policy.q_t),
@@ -474,7 +453,6 @@ SACEnsembleTFPolicy = build_tf_ensemble_policy(
     name="SACEnsembleTFPolicy",
     get_default_config=lambda: ray.rllib.agents.sac.sac_ensemble.DEFAULT_CONFIG,
     make_model=build_sac_ensemble_model,
-    # make_model=build_sac_model,
     postprocess_fn=postprocess_trajectory,
     action_distribution_fn=get_distribution_inputs_and_class,
     loss_fn=sac_actor_critic_loss,
