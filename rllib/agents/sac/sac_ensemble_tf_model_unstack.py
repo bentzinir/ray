@@ -36,6 +36,7 @@ class SACEnsembleTFModel(TFModelV2):
                  shared_actor_body=False,
                  shared_critic_body=False,
                  constant_alpha=False,
+                 shared_entropy=False,
                  ):
         """Initialize variables of this model.
 
@@ -169,10 +170,15 @@ class SACEnsembleTFModel(TFModelV2):
             initial_alpha = 0.1
             print("=================CONSTANT ALPHA====================")
 
-        print(f"target ent: {self.target_entropy}, initial alpha: {initial_alpha}")
+        print(f"target ent: {self.target_entropy}, initial alpha: {initial_alpha}, shared ent: {shared_entropy}")
 
-        self.log_alpha = tf.Variable(
-            np.log(initial_alpha), dtype=tf.float32, name="log_alpha")
+        if shared_entropy:
+            self.log_alpha = tf.Variable(
+                np.log(initial_alpha), dtype=tf.float32, name="log_alpha")
+        else:
+            log_alpha_vec = [np.log(initial_alpha) for _ in range(ensemble_size)]
+            log_alpha_vec = np.expand_dims(log_alpha_vec, axis=1)
+            self.log_alpha = tf.Variable(log_alpha_vec, dtype=tf.float32, name="log_alpha")
         self.alpha = tf.exp(self.log_alpha)
         if not constant_alpha:
             self.register_variables([self.log_alpha])
@@ -222,6 +228,7 @@ class SACEnsembleTFModel(TFModelV2):
         """
         # TODO: consider remove casting after debug
         model_out = tf.cast(model_out, tf.float32)
+
         if actions is not None:
             actions = tf.unstack(actions, axis=1)
             twin_q_value_list = [twin_qnet([model_out, act]) for twin_qnet, act in zip(self.twin_q_net, actions)]
