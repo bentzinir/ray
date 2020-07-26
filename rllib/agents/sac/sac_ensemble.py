@@ -1,7 +1,6 @@
 from ray.rllib.agents.trainer import with_common_config
 from ray.rllib.agents.dqn.dqn import GenericOffPolicyTrainer
 from ray.rllib.agents.sac.sac_ensemble_tf_policy import SACEnsembleTFPolicy
-from ray.rllib.agents.sac.sac_tf_policy import SACTFPolicy
 from ray.rllib.utils.deprecation import deprecation_warning, DEPRECATED_VALUE
 
 OPTIMIZER_SHARED_CONFIGS = [
@@ -120,8 +119,11 @@ DEFAULT_CONFIG = with_common_config({
     # from the config-key checker.
     "grad_norm_clipping": DEPRECATED_VALUE,
     "partial_ensemble_size": 1,
-    "shared_actor_body": False,
-    "constant_alpha": False
+    "shared_actor": False,
+    "asymmetric": False,
+    "experience_masking": False,
+    "timescale": 10000,
+    "alpha": None,
 })
 # __sphinx_doc_end__
 # yapf: enable

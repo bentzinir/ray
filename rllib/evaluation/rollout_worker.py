@@ -305,13 +305,6 @@ class RolloutWorker(ParallelIteratorWorker):
 
         self.env = _validate_env(env_creator(env_context))
 
-        if 'ensemble_size' in policy_config:
-            from ray.rllib.env.ensemble import Ensemble
-            self.env = Ensemble(self.env, ensemble_size=policy_config['ensemble_size'])
-        if 'partial_ensemble_size' in policy_config:
-            from ray.rllib.env.action_mux import ActionMux
-            self.env = ActionMux(self.env, ensemble_size=policy_config['partial_ensemble_size'])
-
         if isinstance(self.env, (BaseEnv, MultiAgentEnv)):
 
             def wrap(env):
@@ -345,6 +338,13 @@ class RolloutWorker(ParallelIteratorWorker):
                 return env
 
         self.env = wrap(self.env)
+
+        if 'ensemble_size' in policy_config:
+            from ray.rllib.env.ensemble import Ensemble
+            self.env = Ensemble(self.env, ensemble_size=policy_config['ensemble_size'])
+        if 'partial_ensemble_size' in policy_config:
+            from ray.rllib.env.action_mux import ActionMux
+            self.env = ActionMux(self.env, ensemble_size=policy_config['partial_ensemble_size'])
 
         def make_env(vector_index):
             return wrap(
