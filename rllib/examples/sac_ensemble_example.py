@@ -12,20 +12,22 @@ parser.add_argument("--num-cpus", type=int, default=0)
 parser.add_argument("--env", type=str, default="none")
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--tfe", action="store_true")
-parser.add_argument("--shared_actor_body", action="store_true")
+parser.add_argument("--shared_actor", action="store_true")
 parser.add_argument("--ensemble_size", type=int, default=1)
+parser.add_argument("--timescale", type=int, default=10000)
+parser.add_argument("--timesteps", type=int, default=1000000)
 parser.add_argument("--verbose", type=int, default=1)
 parser.add_argument("--num_workers", type=int, default=1)
 parser.add_argument("--num_gpus", type=int, default=1)
 parser.add_argument("--gamma", type=float, default=0.99)
 parser.add_argument("--batch_size", type=int, default=256)
 parser.add_argument("--target_entropy", type=float, default=None)
-parser.add_argument("--constant_alpha", action="store_true")
 parser.add_argument("--ensemble_grid_search", action="store_true")
 parser.add_argument("--asymmetric", action="store_true")
 parser.add_argument("--local_mode", action="store_true")
 parser.add_argument("--experience_masking", action="store_true")
-parser.add_argument("--shared_entropy", action="store_true")
+parser.add_argument("--alpha", type=float, default=None)
+parser.add_argument("--alpha_grid_search", action="store_true")
 
 from ray.rllib.agents.callbacks import DefaultCallbacks
 from ray.rllib.evaluation import MultiAgentEpisode, RolloutWorker
@@ -82,18 +84,17 @@ if __name__ == "__main__":
             'env': args.env,
             'num_workers': args.num_workers,
             'num_gpus': args.num_gpus,
-            'constant_alpha': args.constant_alpha,
-            'partial_ensemble_size': tune.grid_search(
-                [1, 2, 3, 4, 5]) if args.ensemble_grid_search else args.ensemble_size,
-            'shared_actor_body': args.shared_actor_body,
+            'partial_ensemble_size': tune.grid_search([2, 3]) if args.ensemble_grid_search else args.ensemble_size,
+            'timescale': args.timescale,
+            'shared_actor': args.shared_actor,
             'framework': 'tfe' if args.tfe else 'tf',
             'target_entropy': args.target_entropy,
             'asymmetric': args.asymmetric,
             "callbacks": callback_builder(args.ensemble_size),
-            'train_batch_size': args.batch_size,
+            'train_batch_size': batch_scale * args.batch_size,
             'experience_masking': args.experience_masking,
             'gamma': args.gamma,
-            'shared_entropy': args.shared_entropy,
+            'alpha': tune.grid_search([0.05]) if args.alpha_grid_search else args.alpha,
     }
 
     ray.init(num_cpus=args.num_cpus or None,
@@ -111,4 +112,8 @@ if __name__ == "__main__":
     else:
         tune.run(SACEnsembleTrainer,
                  verbose=args.verbose,
-                 config=config)
+                 config=config,
+                 stop={
+                     "timesteps_total": args.timesteps,
+                    }
+                 )

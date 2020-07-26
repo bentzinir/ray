@@ -31,11 +31,12 @@ class SACEnsembleTFModel(TFModelV2):
                  critic_hiddens=(256, 256),
                  twin_q=False,
                  initial_alpha=1.0,
+                 alpha=None,
                  target_entropy=None,
                  ensemble_size=1,
-                 shared_actor_body=False,
-                 shared_critic_body=False,
-                 constant_alpha=False,
+                 timescale=10000,
+                 shared_actor=False,
+                 shared_critic=False,
                  ):
         """Initialize variables of this model.
 
@@ -71,13 +72,12 @@ class SACEnsembleTFModel(TFModelV2):
 
         self.twin_q = twin_q
         self.ensemble_size = ensemble_size
-        self.shared_actor_body = shared_actor_body
-        self.constant_alpha = constant_alpha
+        self.shared_actor = shared_actor
         self.action_model = [None for _ in range(ensemble_size)]
         self.shift_and_log_scale_diag = [None for _ in range(ensemble_size)]
 
-        if self.shared_actor_body:
-            print(f"=============SHARED ACTOR BODY=============")
+        if self.shared_actor:
+            print(f"=================SHARED ACTOR=================")
             x = None
             for i, hidden in enumerate(actor_hiddens):
                 if x is None:
@@ -164,18 +164,21 @@ class SACEnsembleTFModel(TFModelV2):
                 target_entropy = -np.prod(action_space.shape[1:])
         self.target_entropy = target_entropy
 
-        # TODO: find correct alpha value
-        if constant_alpha:
-            initial_alpha = 0.1
-            print("=================CONSTANT ALPHA====================")
+        if alpha is not None:
+            initial_alpha = alpha
+            print("=================CONSTANT ALPHA=================")
 
         print(f"target ent: {self.target_entropy}, initial alpha: {initial_alpha}")
 
         self.log_alpha = tf.Variable(
             np.log(initial_alpha), dtype=tf.float32, name="log_alpha")
         self.alpha = tf.exp(self.log_alpha)
-        if not constant_alpha:
-            self.register_variables([self.log_alpha])
+        # if alpha is not None:
+        #     self.register_variables([self.log_alpha])
+
+        self.cntr = tf.Variable(0, dtype=tf.float32, name="counter")
+        self.cntr_inc_op = tf.assign_add(self.cntr, 1)
+        self.flrd_cntr = tf.math.floormod(tf.floor(self.cntr/timescale), ensemble_size)
 
     def get_q_values(self, model_out, actions=None, midx=None):
         """Return the Q estimates for the most recent forward pass.
