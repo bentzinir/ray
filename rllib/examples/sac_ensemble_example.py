@@ -36,14 +36,15 @@ from ray.rllib.policy import Policy
 from typing import Dict
 
 
-def callback_builder(ensemble_size):
+def callback_builder():
 
     class MyCallbacks(DefaultCallbacks):
 
         def on_episode_start(self, worker: RolloutWorker, base_env: BaseEnv,
                              policies: Dict[str, Policy],
                              episode: MultiAgentEpisode, **kwargs):
-            for i in range(ensemble_size):
+            episode.custom_metrics[f"max_reward"] = []
+            for i in range(worker.env.ensemble_size):
                 episode.custom_metrics[f"reward_{i}"] = []
 
         def on_episode_step(self, worker: RolloutWorker, base_env: BaseEnv,
@@ -66,6 +67,7 @@ def callback_builder(ensemble_size):
                            policies: Dict[str, Policy], episode: MultiAgentEpisode,
                            **kwargs):
             ensemble_rewards = episode.last_info_for()["ensemble_rewards"]
+            episode.custom_metrics[f"max_reward"].append(np.max(ensemble_rewards))
             for i, ri in enumerate(ensemble_rewards):
                 episode.custom_metrics[f"reward_{i}"].append(ri)
 
@@ -84,17 +86,17 @@ if __name__ == "__main__":
             'env': args.env,
             'num_workers': args.num_workers,
             'num_gpus': args.num_gpus,
-            'partial_ensemble_size': tune.grid_search([2, 3]) if args.ensemble_grid_search else args.ensemble_size,
+            'partial_ensemble_size': tune.grid_search([1, 2, 3, 4]) if args.ensemble_grid_search else args.ensemble_size,
             'timescale': args.timescale,
             'shared_actor': args.shared_actor,
             'framework': 'tfe' if args.tfe else 'tf',
             'target_entropy': args.target_entropy,
             'asymmetric': args.asymmetric,
-            "callbacks": callback_builder(args.ensemble_size),
+            "callbacks": callback_builder(),
             'train_batch_size': batch_scale * args.batch_size,
             'experience_masking': args.experience_masking,
             'gamma': args.gamma,
-            'alpha': tune.grid_search([0.05]) if args.alpha_grid_search else args.alpha,
+            'alpha': tune.grid_search([0.4, 0.3, 0.2, 0.1]) if args.alpha_grid_search else args.alpha,
     }
 
     ray.init(num_cpus=args.num_cpus or None,
@@ -115,5 +117,9 @@ if __name__ == "__main__":
                  config=config,
                  stop={
                      "timesteps_total": args.timesteps,
-                    }
+                    },
+                 # resources_per_trial={'cpu': 2,#config['num_workers'],
+                 #                      'gpu': 0.5,#config['num_gpus']
+                 #    },
+                 reuse_actors=True,
                  )
