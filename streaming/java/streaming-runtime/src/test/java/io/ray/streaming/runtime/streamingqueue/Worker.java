@@ -5,7 +5,7 @@ import io.ray.api.Ray;
 import io.ray.api.ActorHandle;
 import io.ray.runtime.functionmanager.JavaFunctionDescriptor;
 import io.ray.streaming.runtime.config.StreamingWorkerConfig;
-import io.ray.streaming.runtime.transfer.ChannelID;
+import io.ray.streaming.runtime.transfer.ChannelId;
 import io.ray.streaming.runtime.transfer.ChannelCreationParametersBuilder;
 import io.ray.streaming.runtime.transfer.DataMessage;
 import io.ray.streaming.runtime.transfer.DataReader;
@@ -14,6 +14,7 @@ import io.ray.streaming.runtime.transfer.TransferHandler;
 import io.ray.streaming.util.Config;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +54,7 @@ class ReaderWorker extends Worker {
 
   private String name = null;
   private List<String> inputQueueList = null;
-  Map<String, BaseActorHandle> inputActors = new HashMap<>();
+  List<BaseActorHandle> inputActors = new ArrayList<>();
   private DataReader dataReader = null;
   private long handler = 0;
   private ActorHandle<WriterWorker> peerActor = null;
@@ -88,7 +89,7 @@ class ReaderWorker extends Worker {
     LOGGER.info("java.library.path = {}", System.getProperty("java.library.path"));
 
     for (String queue : this.inputQueueList) {
-      inputActors.put(queue, this.peerActor);
+      inputActors.add(this.peerActor);
       LOGGER.info("ReaderWorker actorId: {}", this.peerActor.getId());
     }
 
@@ -173,7 +174,7 @@ class WriterWorker extends Worker {
 
   private String name = null;
   private List<String> outputQueueList = null;
-  Map<String, BaseActorHandle> outputActors = new HashMap<>();
+  List<BaseActorHandle> outputActors = new ArrayList<>();
   DataWriter dataWriter = null;
   ActorHandle<ReaderWorker> peerActor = null;
   int msgCount = 0;
@@ -191,7 +192,7 @@ class WriterWorker extends Worker {
   }
 
   public String testCallReader(ActorHandle<ReaderWorker> readerActor) {
-    String name = readerActor.call(ReaderWorker::getName).get();
+    String name = readerActor.task(ReaderWorker::getName).remote().get();
     LOGGER.info("testCallReader: {}", name);
     return name;
   }
@@ -205,13 +206,13 @@ class WriterWorker extends Worker {
     LOGGER.info("WriterWorker init:");
 
     for (String queue : this.outputQueueList) {
-      outputActors.put(queue, this.peerActor);
+      outputActors.add(this.peerActor);
       LOGGER.info("WriterWorker actorId: {}", this.peerActor.getId());
     }
 
     int count = 3;
     while (count-- != 0) {
-      peer.call(ReaderWorker::testRayCall).get();
+      peer.task(ReaderWorker::testRayCall).remote().get();
     }
 
     try {
@@ -260,7 +261,7 @@ class WriterWorker extends Worker {
         }
 
         bb.clear();
-        ChannelID qid = ChannelID.from(outputQueueList.get(j));
+        ChannelId qid = ChannelId.from(outputQueueList.get(j));
         dataWriter.write(qid, bb);
       }
     }

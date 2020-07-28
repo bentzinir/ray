@@ -11,11 +11,14 @@ import io.ray.api.WaitResult;
 import io.ray.api.exception.RayException;
 import io.ray.api.function.PyActorClass;
 import io.ray.api.function.PyActorMethod;
-import io.ray.api.function.PyRemoteFunction;
+import io.ray.api.function.PyFunction;
 import io.ray.api.function.RayFunc;
+import io.ray.api.id.ActorId;
 import io.ray.api.id.ObjectId;
 import io.ray.api.options.ActorCreationOptions;
 import io.ray.api.options.CallOptions;
+import io.ray.api.placementgroup.PlacementGroup;
+import io.ray.api.placementgroup.PlacementStrategy;
 import io.ray.api.runtimecontext.RuntimeContext;
 import io.ray.runtime.config.RayConfig;
 import io.ray.runtime.context.RuntimeContextImpl;
@@ -34,6 +37,7 @@ import io.ray.runtime.task.FunctionArg;
 import io.ray.runtime.task.TaskExecutor;
 import io.ray.runtime.task.TaskSubmitter;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import org.slf4j.Logger;
@@ -107,15 +111,14 @@ public abstract class AbstractRayRuntime implements RayRuntimeInternal {
   }
 
   @Override
-  public ObjectRef call(PyRemoteFunction pyRemoteFunction, Object[] args,
-                        CallOptions options) {
+  public ObjectRef call(PyFunction pyFunction, Object[] args, CallOptions options) {
     PyFunctionDescriptor functionDescriptor = new PyFunctionDescriptor(
-        pyRemoteFunction.moduleName,
+        pyFunction.moduleName,
         "",
-        pyRemoteFunction.functionName);
+        pyFunction.functionName);
     // Python functions always have a return value, even if it's `None`.
     return callNormalFunction(functionDescriptor, args,
-        /*returnType=*/Optional.of(pyRemoteFunction.returnType), options);
+        /*returnType=*/Optional.of(pyFunction.returnType), options);
   }
 
   @Override
@@ -155,6 +158,17 @@ public abstract class AbstractRayRuntime implements RayRuntimeInternal {
     return (PyActorHandle) createActorImpl(functionDescriptor, args, options);
   }
 
+  @Override
+  public PlacementGroup createPlacementGroup(List<Map<String, Double>> bundles,
+      PlacementStrategy strategy) {
+    return taskSubmitter.createPlacementGroup(bundles, strategy);
+  }
+
+  @SuppressWarnings("unchecked")
+  @Override
+  public <T extends BaseActorHandle> T getActorHandle(ActorId actorId) {
+    return (T) taskSubmitter.getActor(actorId);
+  }
 
   @Override
   public void setAsyncContext(Object asyncContext) {
