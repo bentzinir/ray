@@ -1,1 +1,5 @@
-/home/ron/nir/work/git/bentzinir.ray/.clang-format
+BasedOnStyle: Google
+ColumnLimit: 90
+DerivePointerAlignment: false
+IndentCaseLabels: false
+PointerAlignment: Right
