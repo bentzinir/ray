@@ -1,4 +1,1 @@
-[style]
-based_on_style=pep8
-allow_split_before_dict_value=False
-join_multiple_lines=False
+/home/ron/nir/work/git/bentzinir.ray/.style.yapf
