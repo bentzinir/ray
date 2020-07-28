@@ -518,7 +518,7 @@ def validate_spaces(pid, observation_space, action_space, config):
         raise UnsupportedSpaceException(
             "Action space ({}) of {} is not supported for "
             "SAC.".format(action_space, pid))
-    if isinstance(action_space, Box) and len(action_space.shape) > 1:
+    if isinstance(action_space, Box) and len(action_space.shape) != 2:
         raise UnsupportedSpaceException(
             "Action space ({}) of {} has multiple dimensions "
             "{}. ".format(action_space, pid, action_space.shape) +
