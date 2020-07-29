@@ -28,6 +28,7 @@ parser.add_argument("--local_mode", action="store_true")
 parser.add_argument("--experience_masking", action="store_true")
 parser.add_argument("--alpha", type=float, default=None)
 parser.add_argument("--alpha_grid_search", action="store_true")
+parser.add_argument("--local_dir", type=str, default="none")
 
 from ray.rllib.agents.callbacks import DefaultCallbacks
 from ray.rllib.evaluation import MultiAgentEpisode, RolloutWorker
@@ -76,8 +77,6 @@ def callback_builder():
 
 if __name__ == "__main__":
     args, extra_args = parser.parse_known_args()
-    # args.env = 'CartPole-v0'
-    # args.env = 'HalfCheetah-v3'
     if args.experience_masking:
         batch_scale = args.ensemble_size
     else:
@@ -86,7 +85,7 @@ if __name__ == "__main__":
             'env': args.env,
             'num_workers': args.num_workers,
             'num_gpus': args.num_gpus,
-            'partial_ensemble_size': tune.grid_search([1, 2, 3, 4]) if args.ensemble_grid_search else args.ensemble_size,
+            'partial_ensemble_size': tune.grid_search([1, 2, 3, 4, 5]) if args.ensemble_grid_search else args.ensemble_size,
             'timescale': args.timescale,
             'shared_actor': args.shared_actor,
             'framework': 'tfe' if args.tfe else 'tf',
@@ -96,7 +95,7 @@ if __name__ == "__main__":
             'train_batch_size': batch_scale * args.batch_size,
             'experience_masking': args.experience_masking,
             'gamma': args.gamma,
-            'alpha': tune.grid_search([0.4, 0.3, 0.2, 0.1]) if args.alpha_grid_search else args.alpha,
+            'alpha': tune.grid_search([0.5, 0.4, 0.3, 0.2, 0.1]) if args.alpha_grid_search else args.alpha,
     }
 
     ray.init(num_cpus=args.num_cpus or None,
@@ -122,4 +121,5 @@ if __name__ == "__main__":
                  #                      'gpu': 0.5,#config['num_gpus']
                  #    },
                  reuse_actors=True,
+                 local_dir=args.local_dir,
                  )
