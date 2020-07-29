@@ -327,16 +327,14 @@ def get_simple_policy_class(config):
     else:
         return SimpleQTFPolicy
 
-# from rllib.agents.trainer import Trainer
+
 GenericOffPolicyTrainer = build_trainer(
     name="GenericOffPolicyAlgorithm",
     default_policy=None,
     get_policy_class=get_policy_class,
     default_config=DEFAULT_CONFIG,
     validate_config=validate_config,
-    execution_plan=execution_plan,
-    # make_workers=Trainer._make_workers
-)
+    execution_plan=execution_plan)
 
 DQNTrainer = GenericOffPolicyTrainer.with_updates(
     name="DQN", default_policy=DQNTFPolicy, default_config=DEFAULT_CONFIG)
