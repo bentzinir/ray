@@ -15,6 +15,7 @@ parser.add_argument("--tfe", action="store_true")
 parser.add_argument("--shared_actor", action="store_true")
 parser.add_argument("--ensemble_size", type=int, default=1)
 parser.add_argument("--timescale", type=int, default=10000)
+parser.add_argument("--timescale_grid_search", action="store_true")
 parser.add_argument("--timesteps", type=int, default=1000000)
 parser.add_argument("--verbose", type=int, default=1)
 parser.add_argument("--num_workers", type=int, default=1)
@@ -86,7 +87,7 @@ if __name__ == "__main__":
             'num_workers': args.num_workers,
             'num_gpus': args.num_gpus,
             'partial_ensemble_size': tune.grid_search([1, 2, 3, 4, 5]) if args.ensemble_grid_search else args.ensemble_size,
-            'timescale': args.timescale,
+            'timescale': tune.grid_search([100, 1000, 10000, 50000]) if args.timescale_grid_search else args.timescale,
             'shared_actor': args.shared_actor,
             'framework': 'tfe' if args.tfe else 'tf',
             'target_entropy': args.target_entropy,
