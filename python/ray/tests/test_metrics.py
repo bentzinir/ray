@@ -4,13 +4,14 @@ import grpc
 import pytest
 import requests
 import time
+import numpy as np
 
 import ray
 from ray.core.generated import node_manager_pb2
 from ray.core.generated import node_manager_pb2_grpc
 from ray.core.generated import reporter_pb2
 from ray.core.generated import reporter_pb2_grpc
-from ray.dashboard.memory import (ReferenceType, decode_object_id_if_needed,
+from ray.dashboard.memory import (ReferenceType, decode_object_ref_if_needed,
                                   MemoryTableEntry, MemoryTable, SortingType)
 from ray.test_utils import (RayTestTimeoutException,
                             wait_until_succeeded_without_exception,
@@ -20,7 +21,7 @@ import psutil  # We must import psutil after ray because we bundle it with ray.
 
 
 def test_worker_stats(shutdown_only):
-    addresses = ray.init(num_cpus=1, include_webui=True)
+    addresses = ray.init(num_cpus=1, include_dashboard=True)
     raylet = ray.nodes()[0]
     num_cpus = raylet["Resources"]["CPU"]
     raylet_address = "{}:{}".format(raylet["NodeManagerAddress"],
@@ -113,9 +114,9 @@ def test_worker_stats(shutdown_only):
         ]
         for process in processes:
             # TODO(ekl) why does travis/mi end up in the process list
-            assert ("python" in process or "conda" in process
-                    or "travis" in process or "runner" in process
-                    or "ray" in process)
+            assert ("python" in process or "mini" in process
+                    or "conda" in process or "travis" in process
+                    or "runner" in process or "ray" in process)
         break
 
     # Test kill_actor.
@@ -155,7 +156,7 @@ def test_worker_stats(shutdown_only):
 
 
 def test_raylet_info_endpoint(shutdown_only):
-    addresses = ray.init(include_webui=True, num_cpus=6)
+    addresses = ray.init(include_dashboard=True, num_cpus=6)
 
     @ray.remote
     def f():
@@ -180,7 +181,7 @@ def test_raylet_info_endpoint(shutdown_only):
             self.local_storage = [f.remote() for _ in range(10)]
 
         def remote_store(self):
-            self.remote_storage = ray.put("test")
+            self.remote_storage = ray.put(np.zeros(200 * 1024, dtype=np.uint8))
 
         def getpid(self):
             return os.getpid()
@@ -209,7 +210,7 @@ def test_raylet_info_endpoint(shutdown_only):
             try:
                 assert len(actor_info) == 1
                 _, parent_actor_info = actor_info.popitem()
-                assert parent_actor_info["numObjectIdsInScope"] == 13
+                assert parent_actor_info["numObjectRefsInScope"] == 13
                 assert parent_actor_info["numLocalObjects"] == 10
                 children = parent_actor_info["children"]
                 assert len(children) == 2
@@ -223,15 +224,22 @@ def test_raylet_info_endpoint(shutdown_only):
                 raise Exception(
                     "Timed out while waiting for dashboard to start.")
 
-    assert parent_actor_info["usedResources"]["CPU"] == 2
+    def cpu_resources(actor_info):
+        cpu_resources = 0
+        for slot in actor_info["usedResources"]["CPU"]["resourceSlots"]:
+            cpu_resources += slot["allocation"]
+        return cpu_resources
+
+    assert cpu_resources(parent_actor_info) == 2
     assert parent_actor_info["numExecutedTasks"] == 4
     for _, child_actor_info in children.items():
         if child_actor_info["state"] == -1:
             assert child_actor_info["requiredResources"]["CustomResource"] == 1
         else:
-            assert child_actor_info["state"] == 1
+            assert child_actor_info[
+                "state"] == ray.gcs_utils.ActorTableData.ALIVE
             assert len(child_actor_info["children"]) == 0
-            assert child_actor_info["usedResources"]["CPU"] == 1
+            assert cpu_resources(child_actor_info) == 1
 
     profiling_id = requests.get(
         webui_url + "/api/launch_profiling",
@@ -436,10 +444,9 @@ def test_memory_dashboard(shutdown_only):
         stop_memory_table()
         return True
 
-    def test_object_pineed_in_memory():
-        import numpy as np
+    def test_object_pinned_in_memory():
 
-        a = ray.put(np.zeros(1))
+        a = ray.put(np.zeros(200 * 1024, dtype=np.uint8))
         b = ray.get(a)  # Noqa F841
         del a
 
@@ -463,8 +470,8 @@ def test_memory_dashboard(shutdown_only):
         def f(arg):
             time.sleep(1)
 
-        a = ray.put(None)  # Noqa F841
-        b = f.remote(a)  # Noqa F841
+        a = ray.put(np.zeros(200 * 1024, dtype=np.uint8))
+        b = f.remote(a)
 
         wait_for_condition(memory_table_ready)
         memory_table = get_memory_table()
@@ -480,12 +487,12 @@ def test_memory_dashboard(shutdown_only):
         stop_memory_table()
         return True
 
-    def test_serialized_object_id_reference():
+    def test_serialized_object_ref_reference():
         @ray.remote
         def f(arg):
             time.sleep(1)
 
-        a = ray.put(None)  # Noqa F841
+        a = ray.put(None)
         b = f.remote([a])  # Noqa F841
 
         wait_for_condition(memory_table_ready)
@@ -502,7 +509,7 @@ def test_memory_dashboard(shutdown_only):
         stop_memory_table()
         return True
 
-    def test_captured_object_id_reference():
+    def test_captured_object_ref_reference():
         a = ray.put(None)
         b = ray.put([a])  # Noqa F841
         del a
@@ -544,30 +551,27 @@ def test_memory_dashboard(shutdown_only):
     # These tests should be retried because it takes at least one second
     # to get the fresh new memory table. It is because memory table is updated
     # Whenever raylet and node info is renewed which takes 1 second.
-    assert (wait_for_condition(
-        test_local_reference, timeout=30000, retry_interval_ms=1000) is True)
+    wait_for_condition(
+        test_local_reference, timeout=30000, retry_interval_ms=1000)
 
-    assert (wait_for_condition(
-        test_object_pineed_in_memory, timeout=30000, retry_interval_ms=1000) is
-            True)
+    wait_for_condition(
+        test_object_pinned_in_memory, timeout=30000, retry_interval_ms=1000)
 
-    assert (wait_for_condition(
-        test_pending_task_references, timeout=30000, retry_interval_ms=1000) is
-            True)
+    wait_for_condition(
+        test_pending_task_references, timeout=30000, retry_interval_ms=1000)
 
-    assert (wait_for_condition(
-        test_serialized_object_id_reference,
+    wait_for_condition(
+        test_serialized_object_ref_reference,
         timeout=30000,
-        retry_interval_ms=1000) is True)
+        retry_interval_ms=1000)
 
-    assert (wait_for_condition(
-        test_captured_object_id_reference,
+    wait_for_condition(
+        test_captured_object_ref_reference,
         timeout=30000,
-        retry_interval_ms=1000) is True)
+        retry_interval_ms=1000)
 
-    assert (wait_for_condition(
-        test_actor_handle_reference, timeout=30000, retry_interval_ms=1000) is
-            True)
+    wait_for_condition(
+        test_actor_handle_reference, timeout=30000, retry_interval_ms=1000)
 
 
 """Memory Table Unit Test"""
@@ -577,7 +581,7 @@ IS_DRIVER = True
 PID = 1
 OBJECT_ID = "7wpsIhgZiBz/////AQAAyAEAAAA="
 ACTOR_ID = "fffffffffffffffff66d17ba010000c801000000"
-DECODED_ID = decode_object_id_if_needed(OBJECT_ID)
+DECODED_ID = decode_object_ref_if_needed(OBJECT_ID)
 OBJECT_SIZE = 100
 
 
@@ -715,8 +719,8 @@ def test_invalid_memory_entry():
 def test_valid_reference_memory_entry():
     memory_entry = build_local_reference_entry()
     assert memory_entry.reference_type == ReferenceType.LOCAL_REFERENCE
-    assert memory_entry.object_id == ray.ObjectID(
-        decode_object_id_if_needed(OBJECT_ID))
+    assert memory_entry.object_ref == ray.ObjectRef(
+        decode_object_ref_if_needed(OBJECT_ID))
     assert memory_entry.is_valid() is True
 
 
