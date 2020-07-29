@@ -164,7 +164,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     }, [], None)
 
     # Broadcast the action of active ensemble member to all other ensemble members,
-    # because this action is the one responsible for the transition
+    # because this action is the one responsible for the transition.
     E = policy.config['partial_ensemble_size']
     dones = tf.tile(tf.expand_dims(train_batch[SampleBatch.DONES], 1), [1, E])
     rewards = tf.tile(tf.expand_dims(train_batch[SampleBatch.REWARDS], 1), [1, E])
