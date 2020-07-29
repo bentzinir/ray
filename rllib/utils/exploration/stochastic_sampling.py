@@ -61,9 +61,7 @@ class StochasticSampling(Exploration):
         logp = tf.cond(
             tf.constant(explore) if isinstance(explore, bool) else explore,
             true_fn=lambda: action_dist.sampled_action_logp(),
-            false_fn=logp_false_fn,
-            # false_fn=lambda: tf.zeros_like(action_dist.sampled_action_logp()),
-        )
+            false_fn=logp_false_fn)
 
         return action, logp
 
