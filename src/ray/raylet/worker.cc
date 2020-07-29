@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ray/raylet/worker.h"
+#include "worker.h"
 
 #include <boost/bind.hpp>
 
+#include "ray/protobuf/core_worker.grpc.pb.h"
+#include "ray/protobuf/core_worker.pb.h"
 #include "ray/raylet/format/node_manager_generated.h"
 #include "ray/raylet/raylet.h"
-#include "src/ray/protobuf/core_worker.grpc.pb.h"
-#include "src/ray/protobuf/core_worker.pb.h"
 
 namespace ray {
 
@@ -65,12 +65,7 @@ Language Worker::GetLanguage() const { return language_; }
 const std::string Worker::IpAddress() const { return ip_address_; }
 
 int Worker::Port() const {
-  // NOTE(kfstorm): Since `RayletClient::AnnounceWorkerPort` is an asynchronous
-  // operation, the worker may crash before the `AnnounceWorkerPort` request is received
-  // by raylet. In this case, Accessing `Worker::Port` in
-  // `NodeManager::ProcessDisconnectClientMessage` will fail the check. So disable the
-  // check here.
-  // RAY_CHECK(port_ > 0);
+  RAY_CHECK(port_ > 0);
   return port_;
 }
 

@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_STORE_CLIENT_IN_MEMORY_STORE_CLIENT_H
+#define RAY_GCS_STORE_CLIENT_IN_MEMORY_STORE_CLIENT_H
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include "ray/gcs/store_client/store_client.h"
-#include "src/ray/protobuf/gcs.pb.h"
+#include "ray/protobuf/gcs.pb.h"
 
 namespace ray {
 
@@ -84,3 +85,5 @@ class InMemoryStoreClient : public StoreClient {
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_STORE_CLIENT_IN_MEMORY_STORE_CLIENT_H

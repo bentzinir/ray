@@ -121,11 +121,7 @@ Status InMemoryStoreClient::AsyncDeleteByIndex(const std::string &table_name,
     }
     table->index_keys_.erase(iter);
   }
-  main_io_service_.post([callback]() {
-    if (callback) {
-      callback(Status::OK());
-    }
-  });
+  main_io_service_.post([callback]() { callback(Status::OK()); });
   return Status::OK();
 }
 

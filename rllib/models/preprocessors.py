@@ -3,7 +3,6 @@ import cv2
 import logging
 import numpy as np
 import gym
-from typing import Any, List
 
 from ray.rllib.utils.annotations import override, PublicAPI
 from ray.rllib.utils.spaces.repeated import Repeated
@@ -20,11 +19,11 @@ class Preprocessor:
     """Defines an abstract observation preprocessor function.
 
     Attributes:
-        shape (List[int]): Shape of the preprocessed output.
+        shape (obj): Shape of the preprocessed output.
     """
 
     @PublicAPI
-    def __init__(self, obs_space: gym.Space, options: dict = None):
+    def __init__(self, obs_space, options=None):
         legacy_patch_shapes(obs_space)
         self._obs_space = obs_space
         if not options:
@@ -37,20 +36,20 @@ class Preprocessor:
         self._i = 0
 
     @PublicAPI
-    def _init_shape(self, obs_space: gym.Space, options: dict) -> List[int]:
+    def _init_shape(self, obs_space, options):
         """Returns the shape after preprocessing."""
         raise NotImplementedError
 
     @PublicAPI
-    def transform(self, observation: Any) -> np.ndarray:
+    def transform(self, observation):
         """Returns the preprocessed observation."""
         raise NotImplementedError
 
-    def write(self, observation: Any, array: np.ndarray, offset: int) -> None:
+    def write(self, observation, array, offset):
         """Alternative to transform for more efficient flattening."""
         array[offset:offset + self._size] = self.transform(observation)
 
-    def check_shape(self, observation: Any) -> None:
+    def check_shape(self, observation):
         """Checks the shape of the given observation."""
         if self._i % VALIDATION_INTERVAL == 0:
             if type(observation) is list and isinstance(
@@ -58,7 +57,6 @@ class Preprocessor:
                 observation = np.array(observation)
             try:
                 if not self._obs_space.contains(observation):
-                    print()
                     raise ValueError(
                         "Observation outside expected value range",
                         self._obs_space, observation)
@@ -70,12 +68,12 @@ class Preprocessor:
 
     @property
     @PublicAPI
-    def size(self) -> int:
+    def size(self):
         return self._size
 
     @property
     @PublicAPI
-    def observation_space(self) -> gym.Space:
+    def observation_space(self):
         obs_space = gym.spaces.Box(-1., 1., self.shape, dtype=np.float32)
         # Stash the unwrapped space so that we can unwrap dict and tuple spaces
         # automatically in model.py
@@ -287,7 +285,7 @@ class RepeatedValuesPreprocessor(Preprocessor):
 
 
 @PublicAPI
-def get_preprocessor(space: gym.Space) -> type:
+def get_preprocessor(space):
     """Returns an appropriate preprocessor class for the given space."""
 
     legacy_patch_shapes(space)
@@ -311,7 +309,7 @@ def get_preprocessor(space: gym.Space) -> type:
     return preprocessor
 
 
-def legacy_patch_shapes(space: gym.Space) -> List[int]:
+def legacy_patch_shapes(space):
     """Assigns shapes to spaces that don't have shapes.
 
     This is only needed for older gym versions that don't set shapes properly

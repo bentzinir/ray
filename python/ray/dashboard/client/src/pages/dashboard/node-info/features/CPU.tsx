@@ -1,17 +1,31 @@
 import React from "react";
-import { Accessor } from "../../../../common/tableUtils";
 import UsageBar from "../../../../common/UsageBar";
-import { getWeightedAverage } from "../../../../common/util";
 import {
-  ClusterFeatureRenderFn,
-  NodeFeatureData,
-  NodeFeatureRenderFn,
-  NodeInfoFeature,
-  WorkerFeatureData,
-  WorkerFeatureRenderFn,
+  ClusterFeatureComponent,
+  NodeFeatureComponent,
+  WorkerFeatureComponent,
 } from "./types";
 
-export const ClusterCPU: ClusterFeatureRenderFn = ({ nodes }) => {
+const getWeightedAverage = (
+  input: {
+    weight: number;
+    value: number;
+  }[],
+) => {
+  if (input.length === 0) {
+    return 0;
+  }
+
+  let totalWeightTimesValue = 0;
+  let totalWeight = 0;
+  for (const { weight, value } of input) {
+    totalWeightTimesValue += weight * value;
+    totalWeight += weight;
+  }
+  return totalWeightTimesValue / totalWeight;
+};
+
+export const ClusterCPU: ClusterFeatureComponent = ({ nodes }) => {
   const cpuWeightedAverage = getWeightedAverage(
     nodes.map((node) => ({ weight: node.cpus[0], value: node.cpu })),
   );
@@ -25,16 +39,13 @@ export const ClusterCPU: ClusterFeatureRenderFn = ({ nodes }) => {
   );
 };
 
-export const NodeCPU: NodeFeatureRenderFn = ({ node }) => (
+export const NodeCPU: NodeFeatureComponent = ({ node }) => (
   <div style={{ minWidth: 60 }}>
     <UsageBar percent={node.cpu} text={`${node.cpu.toFixed(1)}%`} />
   </div>
 );
-export const nodeCPUAccessor: Accessor<NodeFeatureData> = ({ node }) => {
-  return node.cpu;
-};
 
-export const WorkerCPU: WorkerFeatureRenderFn = ({ worker }) => (
+export const WorkerCPU: WorkerFeatureComponent = ({ worker }) => (
   <div style={{ minWidth: 60 }}>
     <UsageBar
       percent={worker.cpu_percent}
@@ -42,18 +53,3 @@ export const WorkerCPU: WorkerFeatureRenderFn = ({ worker }) => (
     />
   </div>
 );
-
-export const workerCPUAccessor: Accessor<WorkerFeatureData> = ({ worker }) => {
-  return worker.cpu_percent;
-};
-
-const cpuFeature: NodeInfoFeature = {
-  id: "cpu",
-  ClusterFeatureRenderFn: ClusterCPU,
-  NodeFeatureRenderFn: NodeCPU,
-  WorkerFeatureRenderFn: WorkerCPU,
-  nodeAccessor: nodeCPUAccessor,
-  workerAccessor: workerCPUAccessor,
-};
-
-export default cpuFeature;

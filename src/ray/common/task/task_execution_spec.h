@@ -1,4 +1,5 @@
-#pragma once
+#ifndef RAY_COMMON_TASK_TASK_EXECUTION_SPEC_H
+#define RAY_COMMON_TASK_TASK_EXECUTION_SPEC_H
 
 #include <vector>
 
@@ -40,3 +41,5 @@ class TaskExecutionSpecification : public MessageWrapper<rpc::TaskExecutionSpec>
 };
 
 }  // namespace ray
+
+#endif  // RAY_COMMON_TASK_TASK_EXECUTION_SPEC_H

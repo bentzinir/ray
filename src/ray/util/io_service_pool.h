@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_UTIL_IO_SERVICE_POOL_H
+#define RAY_UTIL_IO_SERVICE_POOL_H
 
 #include <atomic>
 #include <boost/asio.hpp>
@@ -78,3 +79,5 @@ inline std::vector<boost::asio::io_service *> IOServicePool::GetAll() {
 }
 
 }  // namespace ray
+
+#endif  // RAY_UTIL_IO_SERVICE_POOL_H

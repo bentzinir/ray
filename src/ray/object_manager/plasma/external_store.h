@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
+#ifndef EXTERNAL_STORE_H
+#define EXTERNAL_STORE_H
 
 #include <memory>
 #include <string>
@@ -118,3 +119,5 @@ class ExternalStores {
   store##Class singleton_##store = store##Class()
 
 }  // namespace plasma
+
+#endif  // EXTERNAL_STORE_H

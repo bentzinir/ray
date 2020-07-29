@@ -7,7 +7,6 @@ import io.ray.streaming.api.stream.DataStreamSource;
 import io.ray.streaming.api.stream.StreamSink;
 import io.ray.streaming.jobgraph.JobGraph;
 import io.ray.streaming.jobgraph.JobGraphBuilder;
-import io.ray.streaming.jobgraph.JobVertex;
 import io.ray.streaming.runtime.BaseUnitTest;
 import io.ray.streaming.runtime.config.StreamingConfig;
 import io.ray.streaming.runtime.config.master.ResourceConfig;
@@ -41,10 +40,10 @@ public class ExecutionGraphTest extends BaseUnitTest {
     ExecutionGraph executionGraph = buildExecutionGraph(graphManager, jobGraph);
     List<ExecutionJobVertex> executionJobVertices = executionGraph.getExecutionJobVertexList();
 
-    Assert.assertEquals(executionJobVertices.size(), jobGraph.getJobVertices().size());
+    Assert.assertEquals(executionJobVertices.size(), jobGraph.getJobVertexList().size());
 
-    int totalVertexNum = jobGraph.getJobVertices().stream()
-        .mapToInt(JobVertex::getParallelism).sum();
+    int totalVertexNum = jobGraph.getJobVertexList().stream()
+        .mapToInt(vertex -> vertex.getParallelism()).sum();
     Assert.assertEquals(executionGraph.getAllExecutionVertices().size(), totalVertexNum);
     Assert.assertEquals(executionGraph.getAllExecutionVertices().size(),
         executionGraph.getExecutionVertexIdGenerator().get());
@@ -67,7 +66,7 @@ public class ExecutionGraphTest extends BaseUnitTest {
     List<ExecutionVertex> downStreamVertices = downStream.getExecutionVertices();
     upStreamVertices.forEach(vertex -> {
         Assert.assertEquals(vertex.getResource().get(ResourceType.CPU.name()), 2.0);
-        vertex.getOutputEdges().forEach(upStreamOutPutEdge -> {
+        vertex.getOutputEdges().stream().forEach(upStreamOutPutEdge -> {
             Assert.assertTrue(downStreamVertices.contains(upStreamOutPutEdge.getTargetExecutionVertex()));
         });
     });

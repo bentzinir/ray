@@ -12,17 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_REDIS_ASYNC_CONTEXT_H
+#define RAY_GCS_REDIS_ASYNC_CONTEXT_H
 
 #include <stdarg.h>
 #include <mutex>
 #include "ray/common/status.h"
 
-// These are forward declarations from hiredis.
 extern "C" {
-struct redisAsyncContext;
-struct redisReply;
-typedef void redisCallbackFn(struct redisAsyncContext *, void *, void *);
+#include "hiredis/async.h"
+#include "hiredis/hiredis.h"
 }
 
 namespace ray {
@@ -84,3 +83,5 @@ class RedisAsyncContext {
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_REDIS_ASYNC_CONTEXT_H

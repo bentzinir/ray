@@ -4,9 +4,8 @@ import random
 from ray.util.iter import from_actors, LocalIterator, _NextValueNotReady
 from ray.util.iter_metrics import SharedMetrics
 from ray.rllib.execution.replay_buffer import LocalReplayBuffer
-from ray.rllib.execution.common import \
+from ray.rllib.execution.common import SampleBatchType, \
     STEPS_SAMPLED_COUNTER, _get_shared_metrics
-from ray.rllib.utils.types import SampleBatchType
 
 
 class StoreToReplayBuffer:
@@ -107,7 +106,6 @@ class WaitUntilTimestepsElapsed:
         return ts > self.target_num_timesteps
 
 
-# TODO(ekl) deprecate this in favor of the replay_sequence_length option.
 class SimpleReplayBuffer:
     """Simple replay buffer that operates over batches."""
 

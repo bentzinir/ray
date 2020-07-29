@@ -19,13 +19,13 @@ def reload_modules():
 
 def test_remote_array_methods(ray_start_2_cpus, reload_modules):
     # test eye
-    object_ref = ra.eye.remote(3)
-    val = ray.get(object_ref)
+    object_id = ra.eye.remote(3)
+    val = ray.get(object_id)
     assert_almost_equal(val, np.eye(3))
 
     # test zeros
-    object_ref = ra.zeros.remote([3, 4, 5])
-    val = ray.get(object_ref)
+    object_id = ra.zeros.remote([3, 4, 5])
+    val = ray.get(object_id)
     assert_equal(val, np.zeros([3, 4, 5]))
 
     # test qr - pass by value
@@ -35,7 +35,7 @@ def test_remote_array_methods(ray_start_2_cpus, reload_modules):
     r_val = ray.get(r_id)
     assert_almost_equal(np.dot(q_val, r_val), a_val)
 
-    # test qr - pass by object_ref
+    # test qr - pass by objectid
     a = ra.random.normal.remote([10, 13])
     q_id, r_id = ra.linalg.qr.remote(a)
     a_val = ray.get(a)

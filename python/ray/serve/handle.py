@@ -20,7 +20,7 @@ class RayServeHandle:
             Traffic=...
        )
        >>> handle.remote(my_request_content)
-       ObjectRef(...)
+       ObjectID(...)
        >>> ray.get(handle.remote(...))
        # result
        >>> ray.get(handle.remote(let_it_crash_request))
@@ -111,9 +111,9 @@ class RayServeHandle:
         )
 
     def get_traffic_policy(self):
-        controller = serve.api._get_controller()
+        master_actor = serve.api._get_master_actor()
         return ray.get(
-            controller.get_traffic_policy.remote(self.endpoint_name))
+            master_actor.get_traffic_policy.remote(self.endpoint_name))
 
     def __repr__(self):
         return """

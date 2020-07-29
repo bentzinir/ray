@@ -8,8 +8,6 @@ import time
 import numpy as np
 import pytest
 
-from unittest.mock import MagicMock, patch
-
 import ray
 import ray.cluster_utils
 import ray.test_utils
@@ -196,13 +194,13 @@ def test_redefining_remote_functions(shutdown_only):
     }],
     indirect=True)
 def test_get_multiple(ray_start_regular):
-    object_refs = [ray.put(i) for i in range(10)]
-    assert ray.get(object_refs) == list(range(10))
+    object_ids = [ray.put(i) for i in range(10)]
+    assert ray.get(object_ids) == list(range(10))
 
-    # Get a random choice of object refs with duplicates.
+    # Get a random choice of object IDs with duplicates.
     indices = list(np.random.choice(range(10), 5))
     indices += indices
-    results = ray.get([object_refs[i] for i in indices])
+    results = ray.get([object_ids[i] for i in indices])
     assert results == indices
 
 
@@ -214,13 +212,13 @@ def test_get_multiple(ray_start_regular):
     }],
     indirect=True)
 def test_get_multiple_experimental(ray_start_regular):
-    object_refs = [ray.put(i) for i in range(10)]
+    object_ids = [ray.put(i) for i in range(10)]
 
-    object_refs_tuple = tuple(object_refs)
-    assert ray.experimental.get(object_refs_tuple) == list(range(10))
+    object_ids_tuple = tuple(object_ids)
+    assert ray.experimental.get(object_ids_tuple) == list(range(10))
 
-    object_refs_nparray = np.array(object_refs)
-    assert ray.experimental.get(object_refs_nparray) == list(range(10))
+    object_ids_nparray = np.array(object_ids)
+    assert ray.experimental.get(object_ids_nparray) == list(range(10))
 
 
 @pytest.mark.parametrize(
@@ -412,10 +410,10 @@ def test_skip_plasma(ray_start_regular):
             return x * 2
 
     a = Actor.remote()
-    obj_ref = a.f.remote(1)
+    obj_id = a.f.remote(1)
     # it is not stored in plasma
-    assert not ray.worker.global_worker.core_worker.object_exists(obj_ref)
-    assert ray.get(obj_ref) == 2
+    assert not ray.worker.global_worker.core_worker.object_exists(obj_id)
+    assert ray.get(obj_id) == 2
 
 
 def test_actor_call_order(shutdown_only):
@@ -452,12 +450,12 @@ def test_actor_large_objects(ray_start_regular):
             return np.zeros(10000000)
 
     a = Actor.remote()
-    obj_ref = a.f.remote()
-    assert not ray.worker.global_worker.core_worker.object_exists(obj_ref)
-    done, _ = ray.wait([obj_ref])
+    obj_id = a.f.remote()
+    assert not ray.worker.global_worker.core_worker.object_exists(obj_id)
+    done, _ = ray.wait([obj_id])
     assert len(done) == 1
-    assert ray.worker.global_worker.core_worker.object_exists(obj_ref)
-    assert isinstance(ray.get(obj_ref), np.ndarray)
+    assert ray.worker.global_worker.core_worker.object_exists(obj_id)
+    assert isinstance(ray.get(obj_id), np.ndarray)
 
 
 def test_actor_pass_by_ref(ray_start_regular):
@@ -580,21 +578,20 @@ def test_wait(ray_start_regular):
         time.sleep(delay)
         return
 
-    object_refs = [f.remote(0), f.remote(0), f.remote(0), f.remote(0)]
-    ready_ids, remaining_ids = ray.wait(object_refs)
+    object_ids = [f.remote(0), f.remote(0), f.remote(0), f.remote(0)]
+    ready_ids, remaining_ids = ray.wait(object_ids)
     assert len(ready_ids) == 1
     assert len(remaining_ids) == 3
-    ready_ids, remaining_ids = ray.wait(object_refs, num_returns=4)
-    assert set(ready_ids) == set(object_refs)
+    ready_ids, remaining_ids = ray.wait(object_ids, num_returns=4)
+    assert set(ready_ids) == set(object_ids)
     assert remaining_ids == []
 
-    object_refs = [f.remote(0), f.remote(5)]
-    ready_ids, remaining_ids = ray.wait(
-        object_refs, timeout=0.5, num_returns=2)
+    object_ids = [f.remote(0), f.remote(5)]
+    ready_ids, remaining_ids = ray.wait(object_ids, timeout=0.5, num_returns=2)
     assert len(ready_ids) == 1
     assert len(remaining_ids) == 1
 
-    # Verify that calling wait with duplicate object refs throws an
+    # Verify that calling wait with duplicate object IDs throws an
     # exception.
     x = ray.put(1)
     with pytest.raises(Exception):
@@ -606,8 +603,8 @@ def test_wait(ray_start_regular):
     assert remaining_ids == []
 
     # Test semantics of num_returns with no timeout.
-    obj_refs = [ray.put(i) for i in range(10)]
-    (found, rest) = ray.wait(obj_refs, num_returns=2)
+    oids = [ray.put(i) for i in range(10)]
+    (found, rest) = ray.wait(oids, num_returns=2)
     assert len(found) == 2
     assert len(rest) == 8
 
@@ -666,23 +663,14 @@ def test_internal_config_when_connecting(ray_start_cluster):
 
     # Check that the config was picked up (object pinning is disabled).
     ray.init(address=cluster.address)
-    obj_ref = ray.put(np.zeros(40 * 1024 * 1024, dtype=np.uint8))
+    oid = ray.put(np.zeros(40 * 1024 * 1024, dtype=np.uint8))
 
     for _ in range(5):
         ray.put(np.zeros(40 * 1024 * 1024, dtype=np.uint8))
 
     # This would not raise an exception if object pinning was enabled.
     with pytest.raises(ray.exceptions.UnreconstructableError):
-        ray.get(obj_ref)
-
-
-def test_get_correct_node_ip():
-    with patch("ray.worker") as worker_mock:
-        node_mock = MagicMock()
-        node_mock.node_ip_address = "10.0.0.111"
-        worker_mock._global_node = node_mock
-        found_ip = ray.services.get_node_ip_address()
-        assert found_ip == "10.0.0.111"
+        ray.get(oid)
 
 
 if __name__ == "__main__":

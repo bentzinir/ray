@@ -2,7 +2,6 @@ import os
 import signal
 import sys
 import time
-import numpy as np
 
 import pytest
 
@@ -55,8 +54,7 @@ def test_dying_worker_get(ray_start_2_cpus):
     assert len(ready_ids) == 0
     # Seal the object so the store attempts to notify the worker that the
     # get has been fulfilled.
-    obj = np.ones(200 * 1024, dtype=np.uint8)
-    ray.worker.global_worker.put_object(obj, x_id)
+    ray.worker.global_worker.put_object(1, x_id)
     time.sleep(0.1)
 
     # Make sure that nothing has died.
@@ -81,7 +79,7 @@ def test_dying_driver_get(ray_start_regular):
     driver = """
 import ray
 ray.init("{}")
-ray.get(ray.ObjectRef(ray.utils.hex_to_binary("{}")))
+ray.get(ray.ObjectID(ray.utils.hex_to_binary("{}")))
 """.format(address_info["redis_address"], x_id.hex())
 
     p = run_string_as_driver_nonblocking(driver)
@@ -99,8 +97,7 @@ ray.get(ray.ObjectRef(ray.utils.hex_to_binary("{}")))
     assert len(ready_ids) == 0
     # Seal the object so the store attempts to notify the worker that the
     # get has been fulfilled.
-    obj = np.ones(200 * 1024, dtype=np.uint8)
-    ray.worker.global_worker.put_object(obj, x_id)
+    ray.worker.global_worker.put_object(1, x_id)
     time.sleep(0.1)
 
     # Make sure that nothing has died.
@@ -128,8 +125,8 @@ def test_dying_worker_wait(ray_start_2_cpus):
     worker_pid = ray.get(get_pid.remote())
 
     @ray.remote
-    def block_in_wait(object_ref_in_list):
-        ray.wait(object_ref_in_list)
+    def block_in_wait(object_id_in_list):
+        ray.wait(object_id_in_list)
 
     # Have the worker wait in a wait call.
     block_in_wait.remote([x_id])
@@ -140,8 +137,7 @@ def test_dying_worker_wait(ray_start_2_cpus):
     time.sleep(0.1)
 
     # Create the object.
-    obj = np.ones(200 * 1024, dtype=np.uint8)
-    ray.worker.global_worker.put_object(obj, x_id)
+    ray.worker.global_worker.put_object(1, x_id)
     time.sleep(0.1)
 
     # Make sure that nothing has died.
@@ -166,7 +162,7 @@ def test_dying_driver_wait(ray_start_regular):
     driver = """
 import ray
 ray.init("{}")
-ray.wait([ray.ObjectRef(ray.utils.hex_to_binary("{}"))])
+ray.wait([ray.ObjectID(ray.utils.hex_to_binary("{}"))])
 """.format(address_info["redis_address"], x_id.hex())
 
     p = run_string_as_driver_nonblocking(driver)
@@ -184,8 +180,7 @@ ray.wait([ray.ObjectRef(ray.utils.hex_to_binary("{}"))])
     assert len(ready_ids) == 0
     # Seal the object so the store attempts to notify the worker that the
     # wait can return.
-    obj = np.ones(200 * 1024, dtype=np.uint8)
-    ray.worker.global_worker.put_object(obj, x_id)
+    ray.worker.global_worker.put_object(1, x_id)
     time.sleep(0.1)
 
     # Make sure that nothing has died.

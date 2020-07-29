@@ -2,28 +2,20 @@
 
 It also checks that it is usable with a separate scheduler.
 """
-import time
-
 import ray
-from ray import tune
+from ray.tune import run
 from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.tune.suggest.skopt import SkOptSearch
 
 
-def evaluation_fn(step, width, height):
-    return (0.1 + width * step / 100)**(-1) + height * 0.1
-
-
-def easy_objective(config):
-    # Hyperparameters
-    width, height = config["width"], config["height"]
-
-    for step in range(config["steps"]):
-        # Iterative training function - can be any arbitrary training procedure
-        intermediate_score = evaluation_fn(step, width, height)
-        # Feed the score back back to Tune.
-        tune.report(iterations=step, mean_loss=intermediate_score)
-        time.sleep(0.1)
+def easy_objective(config, reporter):
+    import time
+    time.sleep(0.2)
+    for i in range(config["iterations"]):
+        reporter(
+            timesteps_total=i,
+            mean_loss=(config["height"] - 14)**2 - abs(config["width"] - 3))
+        time.sleep(0.02)
 
 
 if __name__ == "__main__":
@@ -39,8 +31,11 @@ if __name__ == "__main__":
     config = {
         "num_samples": 10 if args.smoke_test else 50,
         "config": {
-            "steps": 100,
-        }
+            "iterations": 100,
+        },
+        "stop": {
+            "timesteps_total": 100
+        },
     }
     optimizer = Optimizer([(0, 20), (-100, 100)])
     previously_run_params = [[10, 0], [15, -20]]
@@ -52,8 +47,7 @@ if __name__ == "__main__":
         points_to_evaluate=previously_run_params,
         evaluated_rewards=known_rewards)
     scheduler = AsyncHyperBandScheduler(metric="mean_loss", mode="min")
-    tune.run(
-        easy_objective,
+    run(easy_objective,
         name="skopt_exp_with_warmstart",
         search_alg=algo,
         scheduler=scheduler,
@@ -67,8 +61,7 @@ if __name__ == "__main__":
         mode="min",
         points_to_evaluate=previously_run_params)
     scheduler = AsyncHyperBandScheduler(metric="mean_loss", mode="min")
-    tune.run(
-        easy_objective,
+    run(easy_objective,
         name="skopt_exp",
         search_alg=algo,
         scheduler=scheduler,

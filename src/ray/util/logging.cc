@@ -14,57 +14,37 @@
 
 #include "ray/util/logging.h"
 
-#ifdef _WIN32
-#include <process.h>
-#else
+#ifndef _WIN32
 #include <execinfo.h>
 #endif
 
 #include <signal.h>
 #include <stdlib.h>
-#ifndef _WIN32
-#include <unistd.h>
-#endif
-
 #include <algorithm>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 
 #ifdef RAY_USE_GLOG
 #include <sys/stat.h>
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4722)  // Ignore non-returning destructor warning in GLOG
-#endif
 #include "glog/logging.h"
-#ifdef _MSC_VER
-#pragma warning(pop)
 #endif
-#endif
-
-#include "ray/util/filesystem.h"
 
 namespace ray {
 
 #ifdef RAY_USE_GLOG
-struct StreamLogger : public google::base::Logger {
-  std::ofstream out_;
-
-  std::ostream &out() { return out_.is_open() ? out_ : std::cout; }
-
+struct StdoutLogger : public google::base::Logger {
   virtual void Write(bool /* should flush */, time_t /* timestamp */, const char *message,
                      int length) {
     // note: always flush otherwise it never shows up in raylet.out
-    out().write(message, length) << std::flush;
+    std::cout << std::string(message, length) << std::flush;
   }
 
-  virtual void Flush() { out().flush(); }
+  virtual void Flush() { std::cout.flush(); }
 
   virtual google::uint32 LogSize() { return 0; }
 };
 
-static StreamLogger stream_logger_singleton;
+static StdoutLogger stdout_logger_singleton;
 #endif
 
 // This is the default implementation of ray log,
@@ -173,41 +153,30 @@ void RayLog::StartRayLog(const std::string &app_name, RayLogLevel severity_thres
   log_dir_ = log_dir;
 #ifdef RAY_USE_GLOG
   google::InitGoogleLogging(app_name_.c_str());
-  // Enable log file if log_dir_ is not empty.
-  std::string dir_ends_with_slash = log_dir_;
-  if (!ray::IsDirSep(log_dir_[log_dir_.length() - 1])) {
-    dir_ends_with_slash += ray::GetDirSep();
-  }
-  if (!log_dir_.empty()) {
-    std::string app_name_without_path = app_name;
+  if (log_dir_.empty()) {
+    google::SetStderrLogging(GetMappedSeverity(RayLogLevel::ERROR));
+    int level = GetMappedSeverity(severity_threshold_);
+    google::base::SetLogger(level, &stdout_logger_singleton);
+  } else {
+    // Enable log file if log_dir_ is not empty.
+    auto dir_ends_with_slash = log_dir_;
+    if (log_dir_[log_dir_.length() - 1] != '/') {
+      dir_ends_with_slash += "/";
+    }
+    auto app_name_without_path = app_name;
     if (app_name.empty()) {
       app_name_without_path = "DefaultApp";
     } else {
       // Find the app name without the path.
-      std::string app_file_name = ray::GetFileName(app_name);
-      if (!app_file_name.empty()) {
-        app_name_without_path = app_file_name;
+      size_t pos = app_name.rfind('/');
+      if (pos != app_name.npos && pos + 1 < app_name.length()) {
+        app_name_without_path = app_name.substr(pos + 1);
       }
     }
-    char buffer[80];
-    time_t rawtime;
-    time(&rawtime);
-#ifdef _WIN32
-    int pid = _getpid();
-#else
-    pid_t pid = getpid();
-#endif
-    strftime(buffer, sizeof(buffer), "%Y%m%d-%H%M%S", localtime(&rawtime));
-    std::string path = dir_ends_with_slash + app_name_without_path + "." + buffer + "." +
-                       std::to_string(pid) + ".log";
-    stream_logger_singleton.out_.rdbuf()->pubsetbuf(0, 0);
-    stream_logger_singleton.out_.open(path.c_str(),
-                                      std::ios_base::app | std::ios_base::binary);
+    google::SetLogFilenameExtension(app_name_without_path.c_str());
+    int level = GetMappedSeverity(severity_threshold_);
+    google::SetLogDestination(level, dir_ends_with_slash.c_str());
   }
-  for (int lvl = 0; lvl < NUM_SEVERITIES; ++lvl) {
-    google::base::SetLogger(lvl, &stream_logger_singleton);
-  }
-  google::SetStderrLogging(GetMappedSeverity(RayLogLevel::ERROR));
 #endif
 }
 
@@ -238,7 +207,6 @@ void RayLog::UninstallSignalAction() {
 }
 
 void RayLog::ShutDownRayLog() {
-  stream_logger_singleton.out_.close();
 #ifdef RAY_USE_GLOG
   UninstallSignalAction();
   google::ShutdownGoogleLogging();

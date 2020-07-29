@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_CHAIN_MODULE_H_
+#define RAY_CHAIN_MODULE_H_
 
 #include <functional>
 
-#include "ray/gcs/redis_module/redismodule.h"
+#include "redismodule.h"
 
 // NOTE(zongheng): this duplicated declaration serves as forward-declaration
 // only.  The implementation is supposed to be linked in from credis.  In
@@ -71,3 +72,5 @@ class RedisChainModule {
   int ChainReplicate(RedisModuleCtx *ctx, RedisModuleString **argv, int argc,
                      NodeFunc node_func, TailFunc tail_func);
 };
+
+#endif  // RAY_CHAIN_MODULE_H_

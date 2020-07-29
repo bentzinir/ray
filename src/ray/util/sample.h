@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_UTIL_SAMPLE_H
+#define RAY_UTIL_SAMPLE_H
 
 #include <random>
 
@@ -43,3 +44,5 @@ void random_sample(Iterator begin, Iterator end, size_t num_elements,
   }
   return;
 }
+
+#endif  // RAY_UTIL_SAMPLE_H

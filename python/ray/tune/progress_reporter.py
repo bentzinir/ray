@@ -5,7 +5,7 @@ import time
 
 from ray.tune.result import (EPISODE_REWARD_MEAN, MEAN_ACCURACY, MEAN_LOSS,
                              TRAINING_ITERATION, TIME_TOTAL_S, TIMESTEPS_TOTAL)
-from ray.tune.utils import unflattened_lookup
+from ray.tune.utils import flatten_dict
 
 try:
     from collections.abc import Mapping
@@ -56,11 +56,6 @@ class TuneReporterBase(ProgressReporter):
             include in progress table. If this is a dict, the keys should
             be metric names and the values should be the displayed names.
             If this is a list, the metric name is used directly.
-        parameter_columns (dict[str, str]|list[str]): Names of parameters to
-            include in progress table. If this is a dict, the keys should
-            be parameter names and the values should be the displayed names.
-            If this is a list, the parameter name is used directly. If empty,
-            defaults to all available parameters.
         max_progress_rows (int): Maximum number of rows to print
             in the progress table. The progress table describes the
             progress of each trial. Defaults to 20.
@@ -83,12 +78,10 @@ class TuneReporterBase(ProgressReporter):
 
     def __init__(self,
                  metric_columns=None,
-                 parameter_columns=None,
                  max_progress_rows=20,
                  max_error_rows=20,
                  max_report_frequency=5):
-        self._metric_columns = metric_columns or self.DEFAULT_COLUMNS.copy()
-        self._parameter_columns = parameter_columns or []
+        self._metric_columns = metric_columns or self.DEFAULT_COLUMNS
         self._max_progress_rows = max_progress_rows
         self._max_error_rows = max_error_rows
 
@@ -124,29 +117,6 @@ class TuneReporterBase(ProgressReporter):
                     "of metric columns.")
             self._metric_columns.append(metric)
 
-    def add_parameter_column(self, parameter, representation=None):
-        """Adds a parameter to the existing columns.
-
-        Args:
-            parameter (str): Parameter to add. This must be a parameter
-                specified in the configuration.
-            representation (str): Representation to use in table. Defaults to
-                `parameter`.
-        """
-        if parameter in self._parameter_columns:
-            raise ValueError("Column {} already exists.".format(parameter))
-
-        if isinstance(self._parameter_columns, Mapping):
-            representation = representation or parameter
-            self._parameter_columns[parameter] = representation
-        else:
-            if representation is not None and representation != parameter:
-                raise ValueError(
-                    "`representation` cannot differ from `parameter` "
-                    "if this reporter was initialized with a list "
-                    "of metric columns.")
-            self._parameter_columns.append(parameter)
-
     def _progress_str(self, trials, done, *sys_info, fmt="psql", delim="\n"):
         """Returns full progress string.
 
@@ -172,7 +142,6 @@ class TuneReporterBase(ProgressReporter):
             trial_progress_str(
                 trials,
                 metric_columns=self._metric_columns,
-                parameter_columns=self._parameter_columns,
                 fmt=fmt,
                 max_rows=max_progress))
         messages.append(trial_errors_str(trials, fmt=fmt, max_rows=max_error))
@@ -188,11 +157,6 @@ class JupyterNotebookReporter(TuneReporterBase):
             include in progress table. If this is a dict, the keys should
             be metric names and the values should be the displayed names.
             If this is a list, the metric name is used directly.
-        parameter_columns (dict[str, str]|list[str]): Names of parameters to
-            include in progress table. If this is a dict, the keys should
-            be parameter names and the values should be the displayed names.
-            If this is a list, the parameter name is used directly. If empty,
-            defaults to all available parameters.
         max_progress_rows (int): Maximum number of rows to print
             in the progress table. The progress table describes the
             progress of each trial. Defaults to 20.
@@ -206,13 +170,12 @@ class JupyterNotebookReporter(TuneReporterBase):
     def __init__(self,
                  overwrite,
                  metric_columns=None,
-                 parameter_columns=None,
                  max_progress_rows=20,
                  max_error_rows=20,
                  max_report_frequency=5):
-        super(JupyterNotebookReporter, self).__init__(
-            metric_columns, parameter_columns, max_progress_rows,
-            max_error_rows, max_report_frequency)
+        super(JupyterNotebookReporter,
+              self).__init__(metric_columns, max_progress_rows, max_error_rows,
+                             max_report_frequency)
         self._overwrite = overwrite
 
     def report(self, trials, done, *sys_info):
@@ -233,11 +196,6 @@ class CLIReporter(TuneReporterBase):
             include in progress table. If this is a dict, the keys should
             be metric names and the values should be the displayed names.
             If this is a list, the metric name is used directly.
-        parameter_columns (dict[str, str]|list[str]): Names of parameters to
-            include in progress table. If this is a dict, the keys should
-            be parameter names and the values should be the displayed names.
-            If this is a list, the parameter name is used directly. If empty,
-            defaults to all available parameters.
         max_progress_rows (int): Maximum number of rows to print
             in the progress table. The progress table describes the
             progress of each trial. Defaults to 20.
@@ -250,14 +208,12 @@ class CLIReporter(TuneReporterBase):
 
     def __init__(self,
                  metric_columns=None,
-                 parameter_columns=None,
                  max_progress_rows=20,
                  max_error_rows=20,
                  max_report_frequency=5):
 
-        super(CLIReporter, self).__init__(metric_columns, parameter_columns,
-                                          max_progress_rows, max_error_rows,
-                                          max_report_frequency)
+        super(CLIReporter, self).__init__(metric_columns, max_progress_rows,
+                                          max_error_rows, max_report_frequency)
 
     def report(self, trials, done, *sys_info):
         print(self._progress_str(trials, done, *sys_info))
@@ -285,11 +241,7 @@ def memory_debug_str():
                 "(or ray[debug]) to resolve)")
 
 
-def trial_progress_str(trials,
-                       metric_columns,
-                       parameter_columns=None,
-                       fmt="psql",
-                       max_rows=None):
+def trial_progress_str(trials, metric_columns, fmt="psql", max_rows=None):
     """Returns a human readable message for printing to the console.
 
     This contains a table where each row represents a trial, its parameters
@@ -301,11 +253,6 @@ def trial_progress_str(trials,
             If this is a dict, the keys are metric names and the values are
             the names to use in the message. If this is a list, the metric
             name is used in the message directly.
-        parameter_columns (dict[str, str]|list[str]): Names of parameters to
-            include. If this is a dict, the keys are parameter names and the
-            values are the names to use in the message. If this is a list,
-            the parameter name is used in the message directly. If this is
-            empty, all parameters are used in the message.
         fmt (str): Output format (see tablefmt in tabulate API).
         max_rows (int): Maximum number of rows in the trial table. Defaults to
             unlimited.
@@ -350,39 +297,22 @@ def trial_progress_str(trials,
 
     # Pre-process trials to figure out what columns to show.
     if isinstance(metric_columns, Mapping):
-        metric_keys = list(metric_columns.keys())
+        keys = list(metric_columns.keys())
     else:
-        metric_keys = metric_columns
-    metric_keys = [
-        k for k in metric_keys if any(
+        keys = metric_columns
+    keys = [
+        k for k in keys if any(
             t.last_result.get(k) is not None for t in trials)
     ]
-
-    if not parameter_columns:
-        parameter_keys = sorted(
-            set().union(*[t.evaluated_params for t in trials]))
-    elif isinstance(parameter_columns, Mapping):
-        parameter_keys = list(parameter_columns.keys())
-    else:
-        parameter_keys = parameter_columns
-
     # Build trial rows.
-    trial_table = [
-        _get_trial_info(trial, parameter_keys, metric_keys) for trial in trials
-    ]
+    params = sorted(set().union(*[t.evaluated_params for t in trials]))
+    trial_table = [_get_trial_info(trial, params, keys) for trial in trials]
     # Format column headings
     if isinstance(metric_columns, Mapping):
-        formatted_metric_columns = [metric_columns[k] for k in metric_keys]
+        formatted_columns = [metric_columns[k] for k in keys]
     else:
-        formatted_metric_columns = metric_keys
-    if isinstance(parameter_columns, Mapping):
-        formatted_parameter_columns = [
-            parameter_columns[k] for k in parameter_keys
-        ]
-    else:
-        formatted_parameter_columns = parameter_keys
-    columns = (["Trial name", "status", "loc"] + formatted_parameter_columns +
-               formatted_metric_columns)
+        formatted_columns = keys
+    columns = (["Trial name", "status", "loc"] + params + formatted_columns)
     # Tabulate.
     messages.append(
         tabulate(trial_table, headers=columns, tablefmt=fmt, showindex=False))
@@ -466,9 +396,9 @@ def _get_trial_info(trial, parameters, metrics):
         parameters (list[str]): Names of trial parameters to include.
         metrics (list[str]): Names of metrics to include.
     """
-    result = trial.last_result
-    config = trial.config
+    result = flatten_dict(trial.last_result)
+    config = flatten_dict(trial.config)
     trial_info = [str(trial), trial.status, str(trial.location)]
-    trial_info += [unflattened_lookup(param, config) for param in parameters]
-    trial_info += [unflattened_lookup(metric, result) for metric in metrics]
+    trial_info += [config.get(param) for param in parameters]
+    trial_info += [result.get(metric) for metric in metrics]
     return trial_info

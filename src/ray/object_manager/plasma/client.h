@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
+#ifndef PLASMA_CLIENT_H
+#define PLASMA_CLIENT_H
 
 #include <functional>
 #include <memory>
@@ -23,16 +24,15 @@
 #include <vector>
 
 #include "arrow/buffer.h"
-
-#include "ray/common/status.h"
+#include "arrow/status.h"
+#include "arrow/util/macros.h"
+#include "arrow/util/visibility.h"
 #include "ray/object_manager/plasma/common.h"
-#include "ray/util/visibility.h"
 
 using arrow::Buffer;
+using arrow::Status;
 
 namespace plasma {
-
-using ray::Status;
 
 /// Object buffer data structure.
 struct ObjectBuffer {
@@ -44,8 +44,7 @@ struct ObjectBuffer {
   int device_num;
 };
 
-// TODO(suquark): Maybe we should not export plasma later?
-class RAY_EXPORT PlasmaClient {
+class ARROW_EXPORT PlasmaClient {
  public:
   PlasmaClient();
   ~PlasmaClient();
@@ -101,6 +100,33 @@ class RAY_EXPORT PlasmaClient {
                 int64_t metadata_size, std::shared_ptr<Buffer>* data, int device_num = 0,
                 bool evict_if_full = true);
 
+  /// Create and seal an object in the object store. This is an optimization
+  /// which allows small objects to be created quickly with fewer messages to
+  /// the store.
+  ///
+  /// \param object_id The ID of the object to create.
+  /// \param data The data for the object to create.
+  /// \param metadata The metadata for the object to create.
+  /// \param evict_if_full Whether to evict other objects to make space for
+  ///        this object.
+  /// \return The return status.
+  Status CreateAndSeal(const ObjectID& object_id, const std::string& data,
+                       const std::string& metadata, bool evict_if_full = true);
+
+  /// Create and seal multiple objects in the object store. This is an optimization
+  /// of CreateAndSeal to eliminate the cost of IPC per object.
+  ///
+  /// \param object_ids The vector of IDs of the objects to create.
+  /// \param data The vector of data for the objects to create.
+  /// \param metadata The vector of metadata for the objects to create.
+  /// \param evict_if_full Whether to evict other objects to make space for
+  ///        these objects.
+  /// \return The return status.
+  Status CreateAndSealBatch(const std::vector<ObjectID>& object_ids,
+                            const std::vector<std::string>& data,
+                            const std::vector<std::string>& metadata,
+                            bool evict_if_full = true);
+
   /// Get some objects from the Plasma Store. This function will block until the
   /// objects have all been created and sealed in the Plasma Store or the
   /// timeout expires.
@@ -152,6 +178,21 @@ class RAY_EXPORT PlasmaClient {
   ///        the object is present and false if it is not present.
   /// \return The return status.
   Status Contains(const ObjectID& object_id, bool* has_object);
+
+  /// List all the objects in the object store.
+  ///
+  /// This API is experimental and might change in the future.
+  ///
+  /// \param[out] objects ObjectTable of objects in the store. For each entry
+  ///             in the map, the following fields are available:
+  ///             - metadata_size: Size of the object metadata in bytes
+  ///             - data_size: Size of the object data in bytes
+  ///             - ref_count: Number of clients referencing the object buffer
+  ///             - create_time: Unix timestamp of the object creation
+  ///             - construct_duration: Object creation time in seconds
+  ///             - state: Is the object still being created or already sealed?
+  /// \return The return status.
+  Status List(ObjectTable* objects);
 
   /// Abort an unsealed object in the object store. If the abort succeeds, then
   /// it will be as if the object was never created at all. The unsealed object
@@ -205,6 +246,38 @@ class RAY_EXPORT PlasmaClient {
   /// \return The return status.
   Status Refresh(const std::vector<ObjectID>& object_ids);
 
+  /// Compute the hash of an object in the object store.
+  ///
+  /// \param object_id The ID of the object we want to hash.
+  /// \param digest A pointer at which to return the hash digest of the object.
+  ///        The pointer must have at least kDigestSize bytes allocated.
+  /// \return The return status.
+  Status Hash(const ObjectID& object_id, uint8_t* digest);
+
+  /// Subscribe to notifications when objects are sealed in the object store.
+  /// Whenever an object is sealed, a message will be written to the client
+  /// socket that is returned by this method.
+  ///
+  /// \param fd Out parameter for the file descriptor the client should use to
+  /// read notifications
+  ///         from the object store about sealed objects.
+  /// \return The return status.
+  Status Subscribe(int* fd);
+
+  /// Receive next object notification for this client if Subscribe has been called.
+  ///
+  /// \param fd The file descriptor we are reading the notification from.
+  /// \param object_id Out parameter, the object_id of the object that was sealed.
+  /// \param data_size Out parameter, the data size of the object that was sealed.
+  /// \param metadata_size Out parameter, the metadata size of the object that was sealed.
+  /// \return The return status.
+  Status GetNotification(int fd, ObjectID* object_id, int64_t* data_size,
+                         int64_t* metadata_size);
+
+  Status DecodeNotifications(const uint8_t* buffer, std::vector<ObjectID>* object_ids,
+                             std::vector<int64_t>* data_sizes,
+                             std::vector<int64_t>* metadata_sizes);
+
   /// Disconnect from the local plasma instance, including the local store and
   /// manager.
   ///
@@ -230,8 +303,10 @@ class RAY_EXPORT PlasmaClient {
 
   bool IsInUse(const ObjectID& object_id);
 
-  class RAY_NO_EXPORT Impl;
+  class ARROW_NO_EXPORT Impl;
   std::shared_ptr<Impl> impl_;
 };
 
 }  // namespace plasma
+
+#endif  // PLASMA_CLIENT_H

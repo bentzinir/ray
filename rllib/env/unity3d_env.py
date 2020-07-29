@@ -1,11 +1,11 @@
-from gym.spaces import Box, MultiDiscrete, Tuple as TupleSpace
+from gym.spaces import Box, MultiDiscrete, Tuple
 import logging
+import mlagents_envs
+from mlagents_envs.environment import UnityEnvironment
 import numpy as np
-from typing import Callable, Tuple
 
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.utils.annotations import override
-from ray.rllib.utils.types import MultiAgentDict, PolicyID, AgentID
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +13,7 @@ logger = logging.getLogger(__name__)
 class Unity3DEnv(MultiAgentEnv):
     """A MultiAgentEnv representing a single Unity3D game instance.
 
-    For an example on how to use this Env with a running Unity3D editor
-    or with a compiled game, see:
-    `rllib/examples/unity3d_env_local.py`
-    For an example on how to use it inside a Unity game client, which
+    For an example on how to use this class inside a Unity game client, which
     connects to an RLlib Policy server, see:
     `rllib/examples/serving/unity3d_[client|server].py`
 
@@ -26,13 +23,13 @@ class Unity3DEnv(MultiAgentEnv):
     """
 
     def __init__(self,
-                 file_name: str = None,
-                 worker_id: int = 0,
-                 base_port: int = 5004,
-                 seed: int = 0,
-                 no_graphics: bool = False,
-                 timeout_wait: int = 60,
-                 episode_horizon: int = 1000):
+                 file_name=None,
+                 worker_id=0,
+                 base_port=5004,
+                 seed=0,
+                 no_graphics=False,
+                 timeout_wait=60,
+                 episode_horizon=1000):
         """Initializes a Unity3DEnv object.
 
         Args:
@@ -66,9 +63,6 @@ class Unity3DEnv(MultiAgentEnv):
                 "instead.\nMake sure you are pressing the Play (|>) button in "
                 "your editor to start.")
 
-        import mlagents_envs
-        from mlagents_envs.environment import UnityEnvironment
-
         # Try connecting to the Unity3D game instance. If a port
         while True:
             self.worker_id = worker_id
@@ -95,26 +89,25 @@ class Unity3DEnv(MultiAgentEnv):
         self.episode_timesteps = 0
 
     @override(MultiAgentEnv)
-    def step(
-            self, action_dict: MultiAgentDict
-    ) -> Tuple[MultiAgentDict, MultiAgentDict, MultiAgentDict, MultiAgentDict]:
+    def step(self, action_dict):
         """Performs one multi-agent step through the game.
 
         Args:
             action_dict (dict): Multi-agent action dict with:
                 keys=agent identifier consisting of
-                [MLagents behavior name, e.g. "Goalie?team=1"] + "_" +
-                [Agent index, a unique MLAgent-assigned index per single agent]
+                     [MLagents behavior name, e.g. "Goalie?team=1"] + "_" +
+                     [Agent index, a unique MLAgent-assigned index per single
+                      agent]
 
         Returns:
             tuple:
-                - obs: Multi-agent observation dict.
+                obs: Multi-agent observation dict.
                     Only those observations for which to get new actions are
                     returned.
-                - rewards: Rewards dict matching `obs`.
-                - dones: Done dict with only an __all__ multi-agent entry in
-                    it. __all__=True, if episode is done for all agents.
-                - infos: An (empty) info dict.
+                rewards: Rewards dict matching `obs`.
+                dones: Done dict with only an __all__ multi-agent entry in it.
+                    __all__=True, if episode is done for all agents.
+                infos: An (empty) info dict.
         """
 
         # Set only the required actions (from the DecisionSteps) in Unity3D.
@@ -143,7 +136,7 @@ class Unity3DEnv(MultiAgentEnv):
         return obs, rewards, dones, infos
 
     @override(MultiAgentEnv)
-    def reset(self) -> MultiAgentDict:
+    def reset(self):
         """Resets the entire Unity3D scene (a single multi-agent episode)."""
         self.episode_timesteps = 0
         self.unity_env.reset()
@@ -193,66 +186,47 @@ class Unity3DEnv(MultiAgentEnv):
         return obs, rewards, {"__all__": False}, infos
 
     @staticmethod
-    def get_policy_configs_for_game(
-            game_name: str) -> Tuple[dict, Callable[[AgentID], PolicyID]]:
+    def get_policy_configs_for_game(game_name):
 
         # The RLlib server must know about the Spaces that the Client will be
         # using inside Unity3D, up-front.
         obs_spaces = {
-            # 3DBall.
-            "3DBall": Box(float("-inf"), float("inf"), (8, )),
-            # 3DBallHard.
-            "3DBallHard": Box(float("-inf"), float("inf"), (45, )),
             # SoccerStrikersVsGoalie.
-            "Goalie": Box(float("-inf"), float("inf"), (738, )),
-            "Striker": TupleSpace([
+            "Striker": Tuple([
                 Box(float("-inf"), float("inf"), (231, )),
                 Box(float("-inf"), float("inf"), (63, )),
             ]),
-            # Tennis.
-            "Tennis": Box(float("-inf"), float("inf"), (27, )),
-            # VisualHallway.
-            "VisualHallway": Box(float("-inf"), float("inf"), (84, 84, 3)),
-            # Walker.
-            "Walker": Box(float("-inf"), float("inf"), (212, )),
+            "Goalie": Box(float("-inf"), float("inf"), (738, )),
+            # 3DBall.
+            "Agent": Box(float("-inf"), float("inf"), (8, )),
         }
         action_spaces = {
-            # 3DBall.
-            "3DBall": Box(
-                float("-inf"), float("inf"), (2, ), dtype=np.float32),
-            # 3DBallHard.
-            "3DBallHard": Box(
-                float("-inf"), float("inf"), (2, ), dtype=np.float32),
             # SoccerStrikersVsGoalie.
-            "Goalie": MultiDiscrete([3, 3, 3]),
             "Striker": MultiDiscrete([3, 3, 3]),
-            # Tennis.
-            "Tennis": Box(float("-inf"), float("inf"), (3, )),
-            # VisualHallway.
-            "VisualHallway": MultiDiscrete([5]),
-            # Walker.
-            "Walker": Box(float("-inf"), float("inf"), (39, )),
+            "Goalie": MultiDiscrete([3, 3, 3]),
+            # 3DBall.
+            "Agent": Box(float("-inf"), float("inf"), (2, ), dtype=np.float32),
         }
 
         # Policies (Unity: "behaviors") and agent-to-policy mapping fns.
         if game_name == "SoccerStrikersVsGoalie":
             policies = {
-                "Goalie": (None, obs_spaces["Goalie"], action_spaces["Goalie"],
-                           {}),
                 "Striker": (None, obs_spaces["Striker"],
                             action_spaces["Striker"], {}),
+                "Goalie": (None, obs_spaces["Goalie"], action_spaces["Goalie"],
+                           {}),
             }
 
             def policy_mapping_fn(agent_id):
                 return "Striker" if "Striker" in agent_id else "Goalie"
 
-        else:
+        else:  # 3DBall
             policies = {
-                game_name: (None, obs_spaces[game_name],
-                            action_spaces[game_name], {}),
+                "Agent": (None, obs_spaces["Agent"], action_spaces["Agent"],
+                          {})
             }
 
             def policy_mapping_fn(agent_id):
-                return game_name
+                return "Agent"
 
         return policies, policy_mapping_fn

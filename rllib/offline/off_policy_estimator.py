@@ -2,11 +2,7 @@ from collections import namedtuple
 import logging
 
 from ray.rllib.policy.sample_batch import MultiAgentBatch, SampleBatch
-from ray.rllib.policy import Policy
 from ray.rllib.utils.annotations import DeveloperAPI
-from ray.rllib.offline.io_context import IOContext
-from ray.rllib.utils.types import TensorType, SampleBatchType
-from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +15,7 @@ class OffPolicyEstimator:
     """Interface for an off policy reward estimator."""
 
     @DeveloperAPI
-    def __init__(self, policy: Policy, gamma: float):
+    def __init__(self, policy, gamma):
         """Creates an off-policy estimator.
 
         Arguments:
@@ -31,7 +27,7 @@ class OffPolicyEstimator:
         self.new_estimates = []
 
     @classmethod
-    def create(cls, ioctx: IOContext) -> "OffPolicyEstimator":
+    def create(cls, ioctx):
         """Create an off-policy estimator from a IOContext."""
         gamma = ioctx.worker.policy_config["gamma"]
         # Grab a reference to the current model
@@ -44,7 +40,7 @@ class OffPolicyEstimator:
         return cls(policy, gamma)
 
     @DeveloperAPI
-    def estimate(self, batch: SampleBatchType):
+    def estimate(self, batch):
         """Returns an estimate for the given batch of experiences.
 
         The batch will only contain data from one episode, but it may only be
@@ -53,7 +49,7 @@ class OffPolicyEstimator:
         raise NotImplementedError
 
     @DeveloperAPI
-    def action_prob(self, batch: SampleBatchType) -> TensorType:
+    def action_prob(self, batch):
         """Returns the probs for the batch actions for the current policy."""
 
         num_state_inputs = 0
@@ -70,11 +66,11 @@ class OffPolicyEstimator:
         return log_likelihoods
 
     @DeveloperAPI
-    def process(self, batch: SampleBatchType):
+    def process(self, batch):
         self.new_estimates.append(self.estimate(batch))
 
     @DeveloperAPI
-    def check_can_estimate_for(self, batch: SampleBatchType):
+    def check_can_estimate_for(self, batch):
         """Returns whether we can support OPE for this batch."""
 
         if isinstance(batch, MultiAgentBatch):
@@ -91,7 +87,7 @@ class OffPolicyEstimator:
                 "`input_evaluation: []` to disable estimation.")
 
     @DeveloperAPI
-    def get_metrics(self) -> List[OffPolicyEstimate]:
+    def get_metrics(self):
         """Return a list of new episode metric estimates since the last call.
 
         Returns:

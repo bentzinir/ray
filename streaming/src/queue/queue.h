@@ -1,15 +1,16 @@
-#pragma once
-
+#ifndef _STREAMING_QUEUE_H_
+#define _STREAMING_QUEUE_H_
 #include <iterator>
 #include <list>
 #include <vector>
 
-#include "queue/queue_item.h"
-#include "queue/transport.h"
-#include "queue/utils.h"
 #include "ray/common/id.h"
 #include "ray/util/util.h"
+
+#include "queue_item.h"
+#include "transport.h"
 #include "util/streaming_logging.h"
+#include "utils.h"
 
 namespace ray {
 namespace streaming {
@@ -209,3 +210,4 @@ class ReaderQueue : public Queue {
 
 }  // namespace streaming
 }  // namespace ray
+#endif

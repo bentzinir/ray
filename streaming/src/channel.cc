@@ -1,5 +1,4 @@
 #include "channel.h"
-
 #include <unordered_map>
 namespace ray {
 namespace streaming {

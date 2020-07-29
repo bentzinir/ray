@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_SUBSCRIPTION_EXECUTOR_H
+#define RAY_GCS_SUBSCRIPTION_EXECUTOR_H
 
 #include <atomic>
 #include <list>
@@ -105,3 +106,5 @@ class SubscriptionExecutor {
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_SUBSCRIPTION_EXECUTOR_H

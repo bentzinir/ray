@@ -1,7 +1,5 @@
 
 #pragma once
-#include <memory>
-#include <string>
 
 namespace ray {
 namespace api {
@@ -13,16 +11,9 @@ enum class WorkerMode { NONE, DRIVER, WORKER };
 /// TODO(Guyang Song): Make configuration complete and use to initialize.
 class RayConfig {
  public:
-  WorkerMode worker_mode = WorkerMode::DRIVER;
+  WorkerMode workerMode = WorkerMode::DRIVER;
 
-  RunMode run_mode = RunMode::SINGLE_PROCESS;
-
-  std::string redis_address;
-
-  static std::shared_ptr<RayConfig> GetInstance();
-
- private:
-  static std::shared_ptr<RayConfig> config_;
+  RunMode runMode = RunMode::SINGLE_PROCESS;
 };
 
 }  // namespace api

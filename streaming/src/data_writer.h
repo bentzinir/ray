@@ -1,4 +1,5 @@
-#pragma once
+#ifndef RAY_DATA_WRITER_H
+#define RAY_DATA_WRITER_H
 
 #include <cstring>
 #include <mutex>
@@ -134,3 +135,4 @@ class DataWriter {
 };
 }  // namespace streaming
 }  // namespace ray
+#endif  // RAY_DATA_WRITER_H

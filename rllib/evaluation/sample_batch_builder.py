@@ -1,24 +1,16 @@
 import collections
 import logging
 import numpy as np
-from typing import List, Any, Dict, Optional, TYPE_CHECKING
 
-from ray.rllib.evaluation.episode import MultiAgentEpisode
-from ray.rllib.policy.policy import Policy
 from ray.rllib.policy.sample_batch import SampleBatch, MultiAgentBatch
 from ray.rllib.utils.annotations import PublicAPI, DeveloperAPI
 from ray.rllib.utils.debug import summarize
-from ray.rllib.utils.types import PolicyID, AgentID
-from ray.rllib.env.base_env import _DUMMY_AGENT_ID
 from ray.util.debug import log_once
-
-if TYPE_CHECKING:
-    from ray.rllib.agents.callbacks import DefaultCallbacks
 
 logger = logging.getLogger(__name__)
 
 
-def to_float_array(v: List[Any]) -> np.ndarray:
+def to_float_array(v):
     arr = np.array(v)
     if arr.dtype == np.float64:
         return arr.astype(np.float32)  # save some memory
@@ -33,15 +25,14 @@ class SampleBatchBuilder:
     However, it is useful to add data one row (dict) at a time.
     """
 
-    _next_unroll_id = 0  # disambiguates unrolls within a single episode
-
     @PublicAPI
     def __init__(self):
-        self.buffers: Dict[str, List] = collections.defaultdict(list)
+        self.buffers = collections.defaultdict(list)
         self.count = 0
+        self.unroll_id = 0  # disambiguates unrolls within a single episode
 
     @PublicAPI
-    def add_values(self, **values: Dict[str, Any]) -> None:
+    def add_values(self, **values):
         """Add the given dictionary (row) of values to this batch."""
 
         for k, v in values.items():
@@ -49,7 +40,7 @@ class SampleBatchBuilder:
         self.count += 1
 
     @PublicAPI
-    def add_batch(self, batch: SampleBatch) -> None:
+    def add_batch(self, batch):
         """Add the given batch of values to this batch."""
 
         for k, column in batch.items():
@@ -57,18 +48,17 @@ class SampleBatchBuilder:
         self.count += batch.count
 
     @PublicAPI
-    def build_and_reset(self) -> SampleBatch:
+    def build_and_reset(self):
         """Returns a sample batch including all previously added values."""
 
         batch = SampleBatch(
             {k: to_float_array(v)
              for k, v in self.buffers.items()})
-        if SampleBatch.UNROLL_ID not in batch.data:
-            batch.data[SampleBatch.UNROLL_ID] = np.repeat(
-                SampleBatchBuilder._next_unroll_id, batch.count)
-            SampleBatchBuilder._next_unroll_id += 1
+        batch.data[SampleBatch.UNROLL_ID] = np.repeat(self.unroll_id,
+                                                      batch.count)
         self.buffers.clear()
         self.count = 0
+        self.unroll_id += 1
         return batch
 
 
@@ -82,8 +72,7 @@ class MultiAgentSampleBatchBuilder:
     corresponding policy batch for the agent's policy.
     """
 
-    def __init__(self, policy_map: Dict[PolicyID, Policy], clip_rewards: bool,
-                 callbacks: "DefaultCallbacks"):
+    def __init__(self, policy_map, clip_rewards, callbacks):
         """Initialize a MultiAgentSampleBatchBuilder.
 
         Args:
@@ -110,7 +99,7 @@ class MultiAgentSampleBatchBuilder:
         # Regardless of the number of agents involved in each of these steps.
         self.count = 0
 
-    def total(self) -> int:
+    def total(self):
         """Returns the total number of steps taken in the env (all agents).
 
         Returns:
@@ -120,7 +109,7 @@ class MultiAgentSampleBatchBuilder:
 
         return sum(a.count for a in self.agent_builders.values())
 
-    def has_pending_agent_data(self) -> bool:
+    def has_pending_agent_data(self):
         """Returns whether there is pending unprocessed data.
 
         Returns:
@@ -131,8 +120,7 @@ class MultiAgentSampleBatchBuilder:
         return len(self.agent_builders) > 0
 
     @DeveloperAPI
-    def add_values(self, agent_id: AgentID, policy_id: AgentID,
-                   **values: Dict[str, Any]) -> None:
+    def add_values(self, agent_id, policy_id, **values):
         """Add the given dictionary (row) of values to this batch.
 
         Arguments:
@@ -144,15 +132,9 @@ class MultiAgentSampleBatchBuilder:
         if agent_id not in self.agent_builders:
             self.agent_builders[agent_id] = SampleBatchBuilder()
             self.agent_to_policy[agent_id] = policy_id
-
-        # Include the current agent id for multi-agent algorithms.
-        if agent_id != _DUMMY_AGENT_ID:
-            values["agent_id"] = agent_id
-
         self.agent_builders[agent_id].add_values(**values)
 
-    def postprocess_batch_so_far(
-            self, episode: Optional[MultiAgentEpisode] = None) -> None:
+    def postprocess_batch_so_far(self, episode=None):
         """Apply policy postprocessors to any unprocessed rows.
 
         This pushes the postprocessed per-agent batches onto the per-policy
@@ -220,7 +202,7 @@ class MultiAgentSampleBatchBuilder:
         self.agent_builders.clear()
         self.agent_to_policy.clear()
 
-    def check_missing_dones(self) -> None:
+    def check_missing_dones(self):
         for agent_id, builder in self.agent_builders.items():
             if builder.buffers["dones"][-1] is not True:
                 raise ValueError(
@@ -233,8 +215,7 @@ class MultiAgentSampleBatchBuilder:
                     "Alternatively, set no_done_at_end=True to allow this.")
 
     @DeveloperAPI
-    def build_and_reset(self, episode: Optional[MultiAgentEpisode] = None
-                        ) -> MultiAgentBatch:
+    def build_and_reset(self, episode=None):
         """Returns the accumulated sample batches for each policy.
 
         Any unprocessed rows will be first postprocessed with a policy

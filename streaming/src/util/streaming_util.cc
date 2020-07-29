@@ -1,6 +1,6 @@
-#include "util/streaming_util.h"
-
 #include <unordered_set>
+
+#include "streaming_util.h"
 namespace ray {
 namespace streaming {
 

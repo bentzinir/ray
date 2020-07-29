@@ -1,17 +1,16 @@
 import React from "react";
 import {
-  ClusterFeatureRenderFn,
-  NodeFeatureRenderFn,
-  NodeInfoFeature,
-  WorkerFeatureRenderFn,
+  ClusterFeatureComponent,
+  NodeFeatureComponent,
+  WorkerFeatureComponent,
 } from "./types";
 
-export const ClusterWorkers: ClusterFeatureRenderFn = ({ nodes }) => {
+export const ClusterWorkers = (
+  totalWorkers: number,
+): ClusterFeatureComponent => ({ nodes }) => {
   let totalCpus = 0;
-  let totalWorkers = 0;
   for (const node of nodes) {
     totalCpus += node.cpus[0];
-    totalWorkers += node.workers.length;
   }
   return (
     <React.Fragment>
@@ -22,9 +21,10 @@ export const ClusterWorkers: ClusterFeatureRenderFn = ({ nodes }) => {
   );
 };
 
-export const NodeWorkers: NodeFeatureRenderFn = ({ node }) => {
+export const NodeWorkers = (totalWorkers: number): NodeFeatureComponent => ({
+  node,
+}) => {
   const cpus = node.cpus[0];
-  const totalWorkers = node.workers.length;
   return (
     <React.Fragment>
       {totalWorkers.toLocaleString()}{" "}
@@ -37,15 +37,6 @@ export const NodeWorkers: NodeFeatureRenderFn = ({ node }) => {
 // Ray worker process titles have one of the following forms: `ray::IDLE`,
 // `ray::function()`, `ray::Class`, or `ray::Class.method()`. We extract the
 // second portion here for display in the "Workers" column.
-export const WorkerWorkers: WorkerFeatureRenderFn = ({ worker }) => (
+export const WorkerWorkers: WorkerFeatureComponent = ({ worker }) => (
   <React.Fragment>{worker.cmdline[0].split("::", 2)[1]}</React.Fragment>
 );
-
-const workersFeature: NodeInfoFeature = {
-  id: "workers",
-  ClusterFeatureRenderFn: ClusterWorkers,
-  NodeFeatureRenderFn: NodeWorkers,
-  WorkerFeatureRenderFn: WorkerWorkers,
-};
-
-export default workersFeature;

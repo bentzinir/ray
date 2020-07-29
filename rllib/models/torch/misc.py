@@ -1,7 +1,7 @@
 """ Code adapted from https://github.com/ikostrikov/pytorch-a3c"""
 import numpy as np
 
-from ray.rllib.utils.framework import get_activation_fn, try_import_torch
+from ray.rllib.utils import try_import_torch
 
 torch, nn = try_import_torch()
 
@@ -15,25 +15,21 @@ def normc_initializer(std=1.0):
     return initializer
 
 
-def same_padding(in_size, filter_size, stride_size):
+def valid_padding(in_size, filter_size, stride_size):
     """Note: Padding is added to match TF conv2d `same` padding. See
     www.tensorflow.org/versions/r0.12/api_docs/python/nn/convolution
 
-    Args:
+    Params:
         in_size (tuple): Rows (Height), Column (Width) for input
-        stride_size (Union[int,Tuple[int, int]]): Rows (Height), column (Width)
-            for stride. If int, height == width.
-        filter_size (tuple): Rows (Height), column (Width) for filter
+        stride_size (tuple): Rows (Height), Column (Width) for stride
+        filter_size (tuple): Rows (Height), Column (Width) for filter
 
-    Returns:
-        padding (tuple): For input into torch.nn.ZeroPad2d.
-        output (tuple): Output shape after padding and convolution.
+    Output:
+        padding (tuple): For input into torch.nn.ZeroPad2d
+        output (tuple): Output shape after padding and convolution
     """
     in_height, in_width = in_size
-    if isinstance(filter_size, int):
-        filter_height, filter_width = filter_size, filter_size
-    else:
-        filter_height, filter_width = filter_size
+    filter_height, filter_width = filter_size
     stride_height, stride_width = stride_size
 
     out_height = np.ceil(float(in_height) / float(stride_height))
@@ -96,19 +92,15 @@ class SlimFC(nn.Module):
                  out_size,
                  initializer=None,
                  activation_fn=None,
-                 use_bias=True,
                  bias_init=0.0):
         super(SlimFC, self).__init__()
         layers = []
-        linear = nn.Linear(in_size, out_size, bias=use_bias)
+        linear = nn.Linear(in_size, out_size)
         if initializer:
             initializer(linear.weight)
-        if use_bias is True:
-            nn.init.constant_(linear.bias, bias_init)
+        nn.init.constant_(linear.bias, bias_init)
         layers.append(linear)
-        if isinstance(activation_fn, str):
-            activation_fn = get_activation_fn(activation_fn, "torch")
-        if activation_fn is not None:
+        if activation_fn:
             layers.append(activation_fn())
         self._model = nn.Sequential(*layers)
 

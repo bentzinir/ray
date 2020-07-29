@@ -72,8 +72,8 @@ def test_task_forward(benchmark, num_tasks):
         benchmark(benchmark_task_forward, f, num_tasks)
 
 
-def benchmark_transfer_object(actor, object_refs):
-    ray.get(actor.f.remote(object_refs))
+def benchmark_transfer_object(actor, object_ids):
+    ray.get(actor.f.remote(object_ids))
 
 
 @pytest.mark.benchmark
@@ -87,14 +87,14 @@ def test_transfer_performance(benchmark, ray_start_cluster_head, object_number,
 
     @ray.remote(resources={"my_resource": 1})
     class ObjectActor:
-        def f(self, object_refs):
-            ray.get(object_refs)
+        def f(self, object_ids):
+            ray.get(object_ids)
 
     # setup remote actor
     actor = ObjectActor.remote()
     actor.f.remote([])
 
     data = bytes(1) * data_size
-    object_refs = [ray.put(data) for _ in range(object_number)]
+    object_ids = [ray.put(data) for _ in range(object_number)]
 
-    benchmark(benchmark_transfer_object, actor, object_refs)
+    benchmark(benchmark_transfer_object, actor, object_ids)

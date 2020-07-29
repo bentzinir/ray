@@ -6,7 +6,6 @@ import socket
 import logging
 
 from ray.autoscaler.node_provider import NodeProvider
-from ray.autoscaler.local.config import bootstrap_local
 from ray.autoscaler.tags import TAG_RAY_NODE_TYPE, NODE_TYPE_WORKER, \
     NODE_TYPE_HEAD
 
@@ -148,7 +147,3 @@ class LocalNodeProvider(NodeProvider):
         info = workers[node_id]
         info["state"] = "terminated"
         self.state.put(node_id, info)
-
-    @staticmethod
-    def bootstrap_config(cluster_config):
-        return bootstrap_local(cluster_config)

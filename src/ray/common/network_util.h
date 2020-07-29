@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_COMMON_NETWORK_UTIL_H
+#define RAY_COMMON_NETWORK_UTIL_H
 
 #include <boost/asio.hpp>
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/bind.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <boost/system/error_code.hpp>
-
-#include "ray/common/constants.h"
+#include "constants.h"
 
 using boost::asio::deadline_timer;
 using boost::asio::io_service;
@@ -123,4 +123,4 @@ std::string GetValidLocalIp(int port, int64_t timeout_ms);
 /// \return Whether target rpc server is valid.
 bool Ping(const std::string &ip, int port, int64_t timeout_ms);
 
-bool CheckFree(int port);
+#endif  // RAY_COMMON_NETWORK_UTIL_H

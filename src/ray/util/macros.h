@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_UTIL_MACROS_H
+#define RAY_UTIL_MACROS_H
 
 // From Google gutil
 #ifndef RAY_DISALLOW_COPY_AND_ASSIGN
@@ -53,3 +54,5 @@
 #else
 #define RAY_MUST_USE_RESULT
 #endif
+
+#endif  // RAY_UTIL_MACROS_H

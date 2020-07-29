@@ -9,7 +9,6 @@ import io.ray.runtime.context.LocalModeWorkerContext;
 import io.ray.runtime.object.LocalModeObjectStore;
 import io.ray.runtime.task.LocalModeTaskExecutor;
 import io.ray.runtime.task.LocalModeTaskSubmitter;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,12 +64,6 @@ public class RayDevRuntime extends AbstractRayRuntime {
   @Override
   public void killActor(BaseActorHandle actor, boolean noRestart) {
     throw new UnsupportedOperationException();
-  }
-
-  @SuppressWarnings("unchecked")
-  @Override
-  public <T extends BaseActorHandle> Optional<T> getActor(String name, boolean global) {
-    return (Optional<T>) ((LocalModeTaskSubmitter)taskSubmitter).getActor(name, global);
   }
 
   @Override

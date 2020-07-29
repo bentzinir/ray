@@ -1,5 +1,5 @@
-#pragma once
-
+#ifndef RAY_STREAMING_FLOW_CONTROL_H
+#define RAY_STREAMING_FLOW_CONTROL_H
 #include "channel.h"
 
 namespace ray {
@@ -42,3 +42,4 @@ class UnconsumedSeqFlowControl : public FlowControl {
 };
 }  // namespace streaming
 }  // namespace ray
+#endif  // RAY_STREAMING_FLOW_CONTROL_H

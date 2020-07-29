@@ -106,7 +106,7 @@ class Cifar10Model(Trainable):
         model = Model(inputs=x, outputs=y, name="model1")
         return model
 
-    def setup(self, config):
+    def _setup(self, config):
         self.train_data, self.test_data = self._read_data()
         x_train = self.train_data[0]
         model = self._build_model(x_train.shape[1:])
@@ -120,7 +120,7 @@ class Cifar10Model(Trainable):
             metrics=["accuracy"])
         self.model = model
 
-    def step(self):
+    def _train(self):
         x_train, y_train = self.train_data
         x_train, y_train = x_train[:NUM_SAMPLES], y_train[:NUM_SAMPLES]
         x_test, y_test = self.test_data
@@ -161,17 +161,17 @@ class Cifar10Model(Trainable):
         _, accuracy = self.model.evaluate(x_test, y_test, verbose=0)
         return {"mean_accuracy": accuracy}
 
-    def save_checkpoint(self, checkpoint_dir):
+    def _save(self, checkpoint_dir):
         file_path = checkpoint_dir + "/model"
         self.model.save(file_path)
         return file_path
 
-    def load_checkpoint(self, path):
+    def _restore(self, path):
         # See https://stackoverflow.com/a/42763323
         del self.model
         self.model = load_model(path)
 
-    def cleanup(self):
+    def _stop(self):
         # If need, save your model when exit.
         # saved_path = self.model.save(self.logdir)
         # print("save model at: ", saved_path)

@@ -3,7 +3,6 @@ import random
 
 from ray.rllib.offline.input_reader import InputReader
 from ray.rllib.utils.annotations import override, DeveloperAPI
-from ray.rllib.utils.types import SampleBatchType
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,7 @@ class ShuffledInput(InputReader):
     """
 
     @DeveloperAPI
-    def __init__(self, child: InputReader, n: int = 0):
+    def __init__(self, child, n=0):
         """Initialize a MixedInput.
 
         Arguments:
@@ -29,7 +28,7 @@ class ShuffledInput(InputReader):
         self.buffer = []
 
     @override(InputReader)
-    def next(self) -> SampleBatchType:
+    def next(self):
         if self.n <= 1:
             return self.child.next()
         if len(self.buffer) < self.n:

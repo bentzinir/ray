@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_CORE_WORKER_TASK_MANAGER_H
+#define RAY_CORE_WORKER_TASK_MANAGER_H
 
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include "ray/common/id.h"
 #include "ray/common/task/task.h"
-#include "ray/core_worker/actor_reporter.h"
+#include "ray/core_worker/actor_manager.h"
 #include "ray/core_worker/store_provider/memory_store/memory_store.h"
-#include "src/ray/protobuf/core_worker.pb.h"
-#include "src/ray/protobuf/gcs.pb.h"
+#include "ray/protobuf/core_worker.pb.h"
+#include "ray/protobuf/gcs.pb.h"
 
 namespace ray {
 
@@ -51,23 +52,18 @@ class TaskResubmissionInterface {
   virtual ~TaskResubmissionInterface() {}
 };
 
-using RetryTaskCallback = std::function<void(TaskSpecification &spec, bool delay)>;
-using ReconstructObjectCallback = std::function<void(const ObjectID &object_id)>;
+using RetryTaskCallback = std::function<void(const TaskSpecification &spec, bool delay)>;
 
 class TaskManager : public TaskFinisherInterface, public TaskResubmissionInterface {
  public:
   TaskManager(std::shared_ptr<CoreWorkerMemoryStore> in_memory_store,
               std::shared_ptr<ReferenceCounter> reference_counter,
-              std::shared_ptr<ActorReporterInterface> actor_reporter,
-              RetryTaskCallback retry_task_callback,
-              const std::function<bool(const ClientID &node_id)> &check_node_alive,
-              ReconstructObjectCallback reconstruct_object_callback)
+              std::shared_ptr<ActorManagerInterface> actor_manager,
+              RetryTaskCallback retry_task_callback)
       : in_memory_store_(in_memory_store),
         reference_counter_(reference_counter),
-        actor_reporter_(actor_reporter),
-        retry_task_callback_(retry_task_callback),
-        check_node_alive_(check_node_alive),
-        reconstruct_object_callback_(reconstruct_object_callback) {
+        actor_manager_(actor_manager),
+        retry_task_callback_(retry_task_callback) {
     reference_counter_->SetReleaseLineageCallback(
         [this](const ObjectID &object_id, std::vector<ObjectID> *ids_to_release) {
           RemoveLineageReference(object_id, ids_to_release);
@@ -77,13 +73,15 @@ class TaskManager : public TaskFinisherInterface, public TaskResubmissionInterfa
 
   /// Add a task that is pending execution.
   ///
+  /// \param[in] caller_id The TaskID of the calling task.
   /// \param[in] caller_address The rpc address of the calling task.
   /// \param[in] spec The spec of the pending task.
   /// \param[in] max_retries Number of times this task may be retried
   /// on failure.
   /// \return Void.
-  void AddPendingTask(const rpc::Address &caller_address, const TaskSpecification &spec,
-                      const std::string &call_site, int max_retries = 0);
+  void AddPendingTask(const TaskID &caller_id, const rpc::Address &caller_address,
+                      const TaskSpecification &spec, const std::string &call_site,
+                      int max_retries = 0);
 
   /// Resubmit a task that has completed execution before. This is used to
   /// reconstruct objects stored in Plasma that were lost.
@@ -235,21 +233,10 @@ class TaskManager : public TaskFinisherInterface, public TaskResubmissionInterfa
   std::shared_ptr<ReferenceCounter> reference_counter_;
 
   // Interface for publishing actor creation.
-  std::shared_ptr<ActorReporterInterface> actor_reporter_;
+  std::shared_ptr<ActorManagerInterface> actor_manager_;
 
   /// Called when a task should be retried.
   const RetryTaskCallback retry_task_callback_;
-
-  /// Called to check whether a raylet is still alive. This is used when
-  /// processing a worker's reply to check whether the node that the worker
-  /// was on is still alive. If the node is down, the plasma objects returned by the task
-  /// are marked as failed.
-  const std::function<bool(const ClientID &node_id)> check_node_alive_;
-  /// Called when processing a worker's reply if the node that the worker was
-  /// on died. This should be called to attempt to recover a plasma object
-  /// returned by the task (or store an error if the object is not
-  /// recoverable).
-  const ReconstructObjectCallback reconstruct_object_callback_;
 
   // The number of task failures we have logged total.
   int64_t num_failure_logs_ GUARDED_BY(mu_) = 0;
@@ -276,3 +263,5 @@ class TaskManager : public TaskFinisherInterface, public TaskResubmissionInterfa
 };
 
 }  // namespace ray
+
+#endif  // RAY_CORE_WORKER_TASK_MANAGER_H

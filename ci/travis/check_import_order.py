@@ -37,7 +37,7 @@ def check_import(file):
                 # - submodule import: `import ray.constants as ray_constants`
                 # - submodule import: `from ray import xyz`
                 if re.search(r"^\s*" + check + r"(\s*|\s+# noqa F401.*)$",
-                             line) and check_to_lines[check] == -1:
+                             line):
                     check_to_lines[check] = i
 
     for import_lib in ["import psutil", "import setproctitle"]:

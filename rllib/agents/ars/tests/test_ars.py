@@ -2,8 +2,7 @@ import unittest
 
 import ray
 import ray.rllib.agents.ars as ars
-from ray.rllib.utils.test_utils import framework_iterator, \
-    check_compute_single_action
+from ray.rllib.utils.test_utils import framework_iterator, check_compute_action
 
 
 class TestARS(unittest.TestCase):
@@ -17,16 +16,14 @@ class TestARS(unittest.TestCase):
 
         num_iterations = 2
 
-        for _ in framework_iterator(config):
+        for _ in framework_iterator(config, ("torch", "tf")):
             plain_config = config.copy()
             trainer = ars.ARSTrainer(config=plain_config, env="CartPole-v0")
             for i in range(num_iterations):
                 results = trainer.train()
                 print(results)
 
-            check_compute_single_action(trainer)
-            trainer.stop()
-        ray.shutdown()
+            check_compute_action(trainer)
 
 
 if __name__ == "__main__":

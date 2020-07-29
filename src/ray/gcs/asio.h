@@ -32,7 +32,8 @@
 // Adapted from https://github.com/ryangraham/hiredis-boostasio-adapter
 // (Copyright 2018 Ryan Graham)
 
-#pragma once
+#ifndef RAY_GCS_ASIO_H
+#define RAY_GCS_ASIO_H
 
 #include <stdio.h>
 #include <iostream>
@@ -42,6 +43,8 @@
 #include <boost/asio/error.hpp>
 #include <boost/bind.hpp>
 
+#include "hiredis/async.h"
+#include "hiredis/hiredis.h"
 #include "ray/gcs/redis_async_context.h"
 
 class RedisAsioClient {
@@ -58,9 +61,12 @@ class RedisAsioClient {
 
   void operate();
 
-  void handle_io(boost::system::error_code ec, bool write);
-  void add_io(bool write);
-  void del_io(bool write);
+  void handle_read(boost::system::error_code ec);
+  void handle_write(boost::system::error_code ec);
+  void add_read();
+  void del_read();
+  void add_write();
+  void del_write();
   void cleanup();
 
  private:
@@ -86,3 +92,5 @@ extern "C" void call_C_delRead(void *private_data);
 extern "C" void call_C_addWrite(void *private_data);
 extern "C" void call_C_delWrite(void *private_data);
 extern "C" void call_C_cleanup(void *private_data);
+
+#endif  // RAY_GCS_ASIO_H

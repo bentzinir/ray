@@ -5,7 +5,6 @@ import io.ray.streaming.api.context.RuntimeContext;
 import io.ray.streaming.api.function.impl.ReduceFunction;
 import io.ray.streaming.message.KeyRecord;
 import io.ray.streaming.message.Record;
-import io.ray.streaming.operator.ChainStrategy;
 import io.ray.streaming.operator.OneInputOperator;
 import io.ray.streaming.operator.StreamOperator;
 import java.util.HashMap;
@@ -19,7 +18,6 @@ public class ReduceOperator<K, T> extends StreamOperator<ReduceFunction<T>> impl
 
   public ReduceOperator(ReduceFunction<T> reduceFunction) {
     super(reduceFunction);
-    setChainStrategy(ChainStrategy.HEAD);
   }
 
   @Override
@@ -43,5 +41,4 @@ public class ReduceOperator<K, T> extends StreamOperator<ReduceFunction<T>> impl
       collect(record);
     }
   }
-
 }

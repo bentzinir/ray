@@ -1,7 +1,5 @@
 package io.ray.streaming.runtime.python;
 
-import static org.testng.Assert.assertEquals;
-
 import io.ray.streaming.api.stream.StreamSink;
 import io.ray.streaming.jobgraph.JobGraph;
 import io.ray.streaming.jobgraph.JobGraphBuilder;
@@ -11,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.testng.annotations.Test;
+import static org.testng.Assert.assertEquals;
 
 public class PythonGatewayTest {
 

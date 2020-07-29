@@ -24,7 +24,8 @@ const int64_t kTaskFailureThrottlingThreshold = 50;
 // Throttle task failure logs to once this interval.
 const int64_t kTaskFailureLoggingFrequencyMillis = 5000;
 
-void TaskManager::AddPendingTask(const rpc::Address &caller_address,
+void TaskManager::AddPendingTask(const TaskID &caller_id,
+                                 const rpc::Address &caller_address,
                                  const TaskSpecification &spec,
                                  const std::string &call_site, int max_retries) {
   RAY_LOG(DEBUG) << "Adding pending task " << spec.TaskId() << " with " << max_retries
@@ -34,8 +35,10 @@ void TaskManager::AddPendingTask(const rpc::Address &caller_address,
   std::vector<ObjectID> task_deps;
   for (size_t i = 0; i < spec.NumArgs(); i++) {
     if (spec.ArgByRef(i)) {
-      task_deps.push_back(spec.ArgId(i));
-      RAY_LOG(DEBUG) << "Adding arg ID " << spec.ArgId(i);
+      for (size_t j = 0; j < spec.ArgIdCount(i); j++) {
+        task_deps.push_back(spec.ArgId(i, j));
+        RAY_LOG(DEBUG) << "Adding arg ID " << spec.ArgId(i, j);
+      }
     } else {
       const auto &inlined_ids = spec.ArgInlinedIds(i);
       for (const auto &inlined_id : inlined_ids) {
@@ -63,8 +66,8 @@ void TaskManager::AddPendingTask(const rpc::Address &caller_address,
       // the inner IDs. Note that this RPC can be received *before* the
       // PushTaskReply.
       reference_counter_->AddOwnedObject(spec.ReturnId(i),
-                                         /*inner_ids=*/{}, caller_address, call_site, -1,
-                                         /*is_reconstructable=*/true);
+                                         /*inner_ids=*/{}, caller_id, caller_address,
+                                         call_site, -1, /*is_reconstructable=*/true);
     }
   }
 
@@ -87,6 +90,9 @@ Status TaskManager::ResubmitTask(const TaskID &task_id,
     if (it == submissible_tasks_.end()) {
       return Status::Invalid("Task spec missing");
     }
+    if (it->second.spec.IsActorTask()) {
+      return Status::Invalid("Cannot reconstruct objects returned by actors");
+    }
 
     if (!it->second.pending) {
       resubmit = true;
@@ -102,7 +108,9 @@ Status TaskManager::ResubmitTask(const TaskID &task_id,
 
   for (size_t i = 0; i < spec.NumArgs(); i++) {
     if (spec.ArgByRef(i)) {
-      task_deps->push_back(spec.ArgId(i));
+      for (size_t j = 0; j < spec.ArgIdCount(i); j++) {
+        task_deps->push_back(spec.ArgId(i, j));
+      }
     } else {
       const auto &inlined_ids = spec.ArgInlinedIds(i);
       for (const auto &inlined_id : inlined_ids) {
@@ -113,11 +121,6 @@ Status TaskManager::ResubmitTask(const TaskID &task_id,
 
   if (!task_deps->empty()) {
     reference_counter_->UpdateResubmittedTaskReferences(*task_deps);
-  }
-
-  if (spec.IsActorTask()) {
-    const auto actor_creation_return_id = spec.ActorCreationDummyObjectId();
-    reference_counter_->UpdateResubmittedTaskReferences({actor_creation_return_id});
   }
 
   if (resubmit) {
@@ -183,17 +186,11 @@ void TaskManager::CompletePendingTask(const TaskID &task_id,
     reference_counter_->UpdateObjectSize(object_id, return_object.size());
 
     if (return_object.in_plasma()) {
+      // Mark it as in plasma with a dummy object.
+      RAY_CHECK(
+          in_memory_store_->Put(RayObject(rpc::ErrorType::OBJECT_IN_PLASMA), object_id));
       const auto pinned_at_raylet_id = ClientID::FromBinary(worker_addr.raylet_id());
-      if (check_node_alive_(pinned_at_raylet_id)) {
-        // Mark it as in plasma with a dummy object.
-        RAY_CHECK(in_memory_store_->Put(RayObject(rpc::ErrorType::OBJECT_IN_PLASMA),
-                                        object_id));
-        reference_counter_->UpdateObjectPinnedAtRaylet(object_id, pinned_at_raylet_id);
-      } else {
-        RAY_LOG(INFO) << "Task " << task_id << " returned object " << object_id
-                      << " in plasma on a dead node, attempting to recover";
-        reconstruct_object_callback_(object_id);
-      }
+      reference_counter_->UpdateObjectPinnedAtRaylet(object_id, pinned_at_raylet_id);
     } else {
       // NOTE(swang): If a direct object was promoted to plasma, then we do not
       // record the node ID that it was pinned at, which means that we will not
@@ -370,7 +367,9 @@ void TaskManager::RemoveFinishedTaskReferences(
   std::vector<ObjectID> plasma_dependencies;
   for (size_t i = 0; i < spec.NumArgs(); i++) {
     if (spec.ArgByRef(i)) {
-      plasma_dependencies.push_back(spec.ArgId(i));
+      for (size_t j = 0; j < spec.ArgIdCount(i); j++) {
+        plasma_dependencies.push_back(spec.ArgId(i, j));
+      }
     } else {
       const auto &inlined_ids = spec.ArgInlinedIds(i);
       plasma_dependencies.insert(plasma_dependencies.end(), inlined_ids.begin(),
@@ -412,7 +411,9 @@ void TaskManager::RemoveLineageReference(const ObjectID &object_id,
     // for each of the task's args.
     for (size_t i = 0; i < it->second.spec.NumArgs(); i++) {
       if (it->second.spec.ArgByRef(i)) {
-        released_objects->push_back(it->second.spec.ArgId(i));
+        for (size_t j = 0; j < it->second.spec.ArgIdCount(i); j++) {
+          released_objects->push_back(it->second.spec.ArgId(i, j));
+        }
       } else {
         const auto &inlined_ids = it->second.spec.ArgInlinedIds(i);
         released_objects->insert(released_objects->end(), inlined_ids.begin(),
@@ -449,7 +450,7 @@ void TaskManager::MarkPendingTaskFailed(const TaskID &task_id,
   if (spec.IsActorCreationTask()) {
     // Publish actor death if actor creation task failed after
     // a number of retries.
-    actor_reporter_->PublishTerminatedActor(spec);
+    actor_manager_->PublishTerminatedActor(spec);
   }
 }
 

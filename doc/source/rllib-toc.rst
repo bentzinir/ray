@@ -106,8 +106,6 @@ Algorithms
 
    -  |pytorch| |tensorflow| :ref:`Deep Q Networks (DQN, Rainbow, Parametric DQN) <dqn>`
 
-   -  |pytorch| |tensorflow| :ref:`Model-Agnostic Meta-Learning (MAML) <maml>`
-
    -  |pytorch| |tensorflow| :ref:`Policy Gradients <pg>`
 
    -  |pytorch| |tensorflow| :ref:`Proximal Policy Optimization (PPO) <ppo>`

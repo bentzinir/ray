@@ -1,8 +1,4 @@
-from typing import Tuple, Dict, List
-import gym
-
 from ray.rllib.utils.annotations import PublicAPI
-from ray.rllib.utils.types import MultiAgentDict, AgentID
 
 # If the obs space is Dict type, look for the global state under this key.
 ENV_STATE = "state"
@@ -48,7 +44,7 @@ class MultiAgentEnv:
     """
 
     @PublicAPI
-    def reset(self) -> MultiAgentDict:
+    def reset(self):
         """Resets the env and returns observations from ready agents.
 
         Returns:
@@ -57,9 +53,7 @@ class MultiAgentEnv:
         raise NotImplementedError
 
     @PublicAPI
-    def step(
-            self, action_dict: MultiAgentDict
-    ) -> Tuple[MultiAgentDict, MultiAgentDict, MultiAgentDict, MultiAgentDict]:
+    def step(self, action_dict):
         """Returns observations from ready agents.
 
         The returns are dicts mapping from agent_id strings to values. The
@@ -79,11 +73,7 @@ class MultiAgentEnv:
 # yapf: disable
 # __grouping_doc_begin__
     @PublicAPI
-    def with_agent_groups(
-            self,
-            groups: Dict[str, List[AgentID]],
-            obs_space: gym.Space = None,
-            act_space: gym.Space = None) -> "MultiAgentEnv":
+    def with_agent_groups(self, groups, obs_space=None, act_space=None):
         """Convenience method for grouping together agents in this env.
 
         An agent group is a list of agent ids that are mapped to a single

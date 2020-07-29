@@ -1,4 +1,5 @@
-#pragma once
+#ifndef RAY_STREAMING_CONFIG_H
+#define RAY_STREAMING_CONFIG_H
 
 #include <cstdint>
 #include <string>
@@ -66,3 +67,4 @@ class StreamingConfig {
 };
 }  // namespace streaming
 }  // namespace ray
+#endif  // RAY_STREAMING_CONFIG_H

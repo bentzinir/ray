@@ -15,20 +15,13 @@ from ray import tune
 from ray.tune.logger import MLFLowLogger, DEFAULT_LOGGERS
 
 
-def evaluation_fn(step, width, height):
-    return (0.1 + width * step / 100)**(-1) + height * 0.1
-
-
 def easy_objective(config):
-    # Hyperparameters
-    width, height = config["width"], config["height"]
-
-    for step in range(config.get("steps", 100)):
-        # Iterative training function - can be any arbitrary training procedure
-        intermediate_score = evaluation_fn(step, width, height)
-        # Feed the score back back to Tune.
-        tune.report(iterations=step, mean_loss=intermediate_score)
-        time.sleep(0.1)
+    for i in range(20):
+        result = dict(
+            timesteps_total=i,
+            mean_loss=(config["height"] - 14)**2 - abs(config["width"] - 3))
+        tune.report(**result)
+        time.sleep(0.02)
 
 
 if __name__ == "__main__":

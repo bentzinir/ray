@@ -1,4 +1,4 @@
-#include "queue/message.h"
+#include "message.h"
 
 namespace ray {
 namespace streaming {

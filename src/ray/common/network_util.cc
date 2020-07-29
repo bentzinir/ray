@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ray/common/network_util.h"
-
+#include "network_util.h"
 #include "ray/util/logging.h"
 
 std::string GetValidLocalIp(int port, int64_t timeout_ms) {
@@ -71,14 +70,4 @@ bool Ping(const std::string &ip, int port, int64_t timeout_ms) {
   AsyncClient client;
   bool is_timeout;
   return client.Connect(ip, port, timeout_ms, &is_timeout);
-}
-
-bool CheckFree(int port) {
-  boost::asio::io_service io_service;
-  tcp::socket socket(io_service);
-  socket.open(boost::asio::ip::tcp::v4());
-  boost::system::error_code ec;
-  socket.bind(boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port), ec);
-  socket.close();
-  return !ec.failed();
 }

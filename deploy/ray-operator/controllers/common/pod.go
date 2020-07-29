@@ -1,15 +1,10 @@
 package common
 
 import (
-	rayiov1alpha1 "ray-operator/api/v1alpha1"
-	"strings"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-const (
-	defaultServiceAccountName = "default"
+	rayiov1alpha1 "ray-operator/api/v1alpha1"
+	"strings"
 )
 
 type PodConfig struct {
@@ -33,16 +28,12 @@ func BuildPod(conf *PodConfig) *corev1.Pod {
 	// Build the containers for the pod (there is currently only one).
 	containers := []corev1.Container{buildContainer(conf)}
 
-	serviceAccountName := defaultServiceAccountName
-	if len(conf.Extension.ServiceAccountName) > 0 {
-		serviceAccountName = conf.Extension.ServiceAccountName
-	}
 	spec := corev1.PodSpec{
 		Volumes:            conf.Extension.Volumes,
 		Containers:         containers,
 		Affinity:           conf.Extension.Affinity,
 		Tolerations:        conf.Extension.Tolerations,
-		ServiceAccountName: serviceAccountName,
+		ServiceAccountName: conf.RayCluster.Namespace,
 	}
 
 	pod := &corev1.Pod{

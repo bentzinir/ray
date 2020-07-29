@@ -29,7 +29,11 @@ def ray_start_reconstruction(request):
         })
     for i in range(num_nodes - 1):
         cluster.add_node(
-            num_cpus=1, object_store_memory=plasma_store_memory // num_nodes)
+            num_cpus=1,
+            object_store_memory=plasma_store_memory // num_nodes,
+            _internal_config=json.dumps({
+                "initial_reconstruction_timeout_milliseconds": 200
+            }))
     ray.init(address=cluster.address)
 
     yield plasma_store_memory, num_nodes, cluster
@@ -355,8 +359,8 @@ def test_driver_put_errors(ray_start_object_store_memory):
 #     def g(i):
 #       # Each instance of g submits and blocks on the result of another remote
 #       # task.
-#       object_refs = [f.remote(i, j) for j in range(10)]
-#       return ray.get(object_refs)
+#       object_ids = [f.remote(i, j) for j in range(10)]
+#       return ray.get(object_ids)
 #
 #     ray.init(num_workers=1)
 #     ray.get([g.remote(i) for i in range(1000)])

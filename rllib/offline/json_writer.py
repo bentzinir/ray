@@ -16,8 +16,6 @@ from ray.rllib.offline.io_context import IOContext
 from ray.rllib.offline.output_writer import OutputWriter
 from ray.rllib.utils.annotations import override, PublicAPI
 from ray.rllib.utils.compression import pack, compression_supported
-from ray.rllib.utils.types import FileType, SampleBatchType
-from typing import Any, List
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +26,10 @@ class JsonWriter(OutputWriter):
 
     @PublicAPI
     def __init__(self,
-                 path: str,
-                 ioctx: IOContext = None,
-                 max_file_size: int = 64 * 1024 * 1024,
-                 compress_columns: List[str] = frozenset(["obs", "new_obs"])):
+                 path,
+                 ioctx=None,
+                 max_file_size=64 * 1024 * 1024,
+                 compress_columns=frozenset(["obs", "new_obs"])):
         """Initialize a JsonWriter.
 
         Arguments:
@@ -44,7 +42,7 @@ class JsonWriter(OutputWriter):
         self.ioctx = ioctx or IOContext()
         self.max_file_size = max_file_size
         self.compress_columns = compress_columns
-        if urlparse(path).scheme not in ["", "c"]:
+        if urlparse(path).scheme:
             self.path_is_uri = True
         else:
             path = os.path.abspath(os.path.expanduser(path))
@@ -61,7 +59,7 @@ class JsonWriter(OutputWriter):
         self.cur_file = None
 
     @override(OutputWriter)
-    def write(self, sample_batch: SampleBatchType):
+    def write(self, sample_batch):
         start = time.time()
         data = _to_json(sample_batch, self.compress_columns)
         f = self._get_file()
@@ -74,7 +72,7 @@ class JsonWriter(OutputWriter):
             len(data), f,
             time.time() - start))
 
-    def _get_file(self) -> FileType:
+    def _get_file(self):
         if not self.cur_file or self.bytes_written >= self.max_file_size:
             if self.cur_file:
                 self.cur_file.close()
@@ -96,7 +94,7 @@ class JsonWriter(OutputWriter):
         return self.cur_file
 
 
-def _to_jsonable(v, compress: bool) -> Any:
+def _to_jsonable(v, compress):
     if compress and compression_supported():
         return str(pack(v))
     elif isinstance(v, np.ndarray):
@@ -104,7 +102,7 @@ def _to_jsonable(v, compress: bool) -> Any:
     return v
 
 
-def _to_json(batch: SampleBatchType, compress_columns: List[str]) -> str:
+def _to_json(batch, compress_columns):
     out = {}
     if isinstance(batch, MultiAgentBatch):
         out["type"] = "MultiAgentBatch"

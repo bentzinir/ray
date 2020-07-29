@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_REDIS_CONTEXT_H
+#define RAY_GCS_REDIS_CONTEXT_H
 
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
@@ -23,9 +24,15 @@
 
 #include "ray/common/id.h"
 #include "ray/common/status.h"
-#include "ray/gcs/redis_async_context.h"
 #include "ray/util/logging.h"
-#include "src/ray/protobuf/gcs.pb.h"
+
+#include "ray/gcs/redis_async_context.h"
+#include "ray/protobuf/gcs.pb.h"
+
+extern "C" {
+#include "hiredis/async.h"
+#include "hiredis/hiredis.h"
+}
 
 struct redisContext;
 struct redisAsyncContext;
@@ -283,10 +290,6 @@ class RedisContext {
   boost::asio::io_service &io_service() { return io_service_; }
 
  private:
-  // These functions avoid problems with dependence on hiredis headers with clang-cl.
-  static int GetRedisError(redisContext *context);
-  static void FreeRedisReply(void *reply);
-
   boost::asio::io_service &io_service_;
   redisContext *context_;
   std::unique_ptr<RedisAsyncContext> redis_async_context_;
@@ -350,12 +353,12 @@ std::shared_ptr<CallbackReply> RedisContext::RunSync(
                                id.Data(), id.Size());
   }
   if (redis_reply == nullptr) {
-    RAY_LOG(INFO) << "Run redis command failed , err is " << GetRedisError(context_);
+    RAY_LOG(INFO) << "Run redis command failed , err is " << context_->err;
     return nullptr;
   } else {
     std::shared_ptr<CallbackReply> callback_reply =
         std::make_shared<CallbackReply>(reinterpret_cast<redisReply *>(redis_reply));
-    FreeRedisReply(redis_reply);
+    freeReplyObject(redis_reply);
     return callback_reply;
   }
 }
@@ -363,3 +366,5 @@ std::shared_ptr<CallbackReply> RedisContext::RunSync(
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_REDIS_CONTEXT_H

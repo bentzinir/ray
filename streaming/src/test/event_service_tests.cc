@@ -10,6 +10,7 @@ bool SendEmptyToChannel(ProducerChannelInfo *info) { return true; }
 /// Mock function for write all messages to channel.
 bool WriteAllToChannel(ProducerChannelInfo *info) { return true; }
 
+bool stop = false;
 TEST(EventServiceTest, Test1) {
   std::shared_ptr<EventService> server = std::make_shared<EventService>();
 
@@ -18,28 +19,30 @@ TEST(EventServiceTest, Test1) {
   server->Register(EventType::UserEvent, WriteAllToChannel);
   server->Register(EventType::FlowEvent, WriteAllToChannel);
 
-  bool stop = false;
-  std::thread thread_empty([server, &mock_channel_info, &stop] {
+  std::thread thread_empty([server, &mock_channel_info] {
     std::chrono::milliseconds MockTimer(20);
-    while (!stop) {
+    while (true) {
+      if (stop) break;
       Event event{&mock_channel_info, EventType::EmptyEvent, true};
       server->Push(event);
       std::this_thread::sleep_for(MockTimer);
     }
   });
 
-  std::thread thread_flow([server, &mock_channel_info, &stop] {
+  std::thread thread_flow([server, &mock_channel_info] {
     std::chrono::milliseconds MockTimer(2);
-    while (!stop) {
+    while (true) {
+      if (stop) break;
       Event event{&mock_channel_info, EventType::FlowEvent, true};
       server->Push(event);
       std::this_thread::sleep_for(MockTimer);
     }
   });
 
-  std::thread thread_user([server, &mock_channel_info, &stop] {
+  std::thread thread_user([server, &mock_channel_info] {
     std::chrono::milliseconds MockTimer(2);
-    while (!stop) {
+    while (true) {
+      if (stop) break;
       Event event{&mock_channel_info, EventType::UserEvent, true};
       server->Push(event);
       std::this_thread::sleep_for(MockTimer);

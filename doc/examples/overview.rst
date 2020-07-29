@@ -1,7 +1,8 @@
 Ray Tutorials and Examples
 ==========================
 
-Get started with Ray, Tune, and RLlib with these notebooks that you can run online in CoLab or Binder: `Ray Tutorial Notebooks <https://github.com/ray-project/tutorial>`__
+Get started with Ray, Tune, and RLlib with these notebooks that you can run online in CoLab or Binder:
+ * `Ray Tutorial Notebooks <https://github.com/ray-project/tutorial>`__
 
 .. toctree::
    :hidden:
@@ -15,6 +16,9 @@ Get started with Ray, Tune, and RLlib with these notebooks that you can run onli
    plot_streaming.rst
    plot_example-lm.rst
 
+
+Example Gallery
+---------------
 
 .. customgalleryitem::
    :tooltip: Build a simple parameter server using Ray.

@@ -17,7 +17,6 @@ from ray.core.generated.gcs_pb2 import (
     ResourceTableData,
     ObjectLocationInfo,
     PubSubMessage,
-    WorkerTableData,
 )
 
 __all__ = [
@@ -40,7 +39,6 @@ __all__ = [
     "construct_error_message",
     "ObjectLocationInfo",
     "PubSubMessage",
-    "WorkerTableData",
 ]
 
 FUNCTION_PREFIX = "RemoteFunction:"
@@ -57,9 +55,6 @@ XRAY_JOB_PATTERN = "JOB:*".encode("ascii")
 # Actor pub/sub updates
 RAY_ACTOR_PUBSUB_PATTERN = "ACTOR:*".encode("ascii")
 
-# Reporter pub/sub updates
-RAY_REPORTER_PUBSUB_PATTERN = "RAY_REPORTER.*".encode("ascii")
-
 # These prefixes must be kept up-to-date with the TablePrefix enum in
 # gcs.proto.
 # TODO(rkn): We should use scoped enums, in which case we should be able to
@@ -70,9 +65,6 @@ TablePrefix_ERROR_INFO_string = "ERROR_INFO"
 TablePrefix_PROFILE_string = "PROFILE"
 TablePrefix_JOB_string = "JOB"
 TablePrefix_ACTOR_string = "ACTOR"
-
-WORKER = 0
-DRIVER = 1
 
 
 def construct_error_message(job_id, error_type, message, timestamp):

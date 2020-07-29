@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
+#ifndef PLASMA_COMMON_H
+#define PLASMA_COMMON_H
 
 #include <stddef.h>
 
@@ -26,6 +27,7 @@
 #include "ray/common/id.h"
 #include "ray/object_manager/plasma/compat.h"
 
+#include "arrow/status.h"
 #ifdef PLASMA_CUDA
 #include "arrow/gpu/cuda_api.h"
 #endif
@@ -35,6 +37,23 @@ namespace plasma {
 using ray::ObjectID;
 
 enum class ObjectLocation : int32_t { Local, Remote, Nonexistent };
+
+enum class PlasmaErrorCode : int8_t {
+  PlasmaObjectExists = 1,
+  PlasmaObjectNonexistent = 2,
+  PlasmaStoreFull = 3,
+  PlasmaObjectAlreadySealed = 4,
+};
+
+ARROW_EXPORT arrow::Status MakePlasmaError(PlasmaErrorCode code, std::string message);
+/// Return true iff the status indicates an already existing Plasma object.
+ARROW_EXPORT bool IsPlasmaObjectExists(const arrow::Status& status);
+/// Return true iff the status indicates a non-existent Plasma object.
+ARROW_EXPORT bool IsPlasmaObjectNonexistent(const arrow::Status& status);
+/// Return true iff the status indicates an already sealed Plasma object.
+ARROW_EXPORT bool IsPlasmaObjectAlreadySealed(const arrow::Status& status);
+/// Return true iff the status indicates the Plasma store reached its capacity limit.
+ARROW_EXPORT bool IsPlasmaStoreFull(const arrow::Status& status);
 
 /// Size of object hash digests.
 constexpr int64_t kDigestSize = sizeof(uint64_t);
@@ -62,7 +81,7 @@ struct ObjectTableEntry {
   ~ObjectTableEntry();
 
   /// Memory mapped file containing the object.
-  MEMFD_TYPE fd;
+  int fd;
   /// Device number.
   int device_num;
   /// Size of the underlying map.
@@ -84,6 +103,8 @@ struct ObjectTableEntry {
 
   /// The state of the object, e.g., whether it is open or sealed.
   ObjectState state;
+  /// The digest of the object. Used to see if two objects are the same.
+  unsigned char digest[kDigestSize];
 
 #ifdef PLASMA_CUDA
   /// IPC GPU handle to share with clients.
@@ -96,4 +117,11 @@ struct ObjectTableEntry {
 /// Mapping from ObjectIDs to information about the object.
 typedef std::unordered_map<ObjectID, std::unique_ptr<ObjectTableEntry>> ObjectTable;
 
+/// Globally accessible reference to plasma store configuration.
+/// TODO(pcm): This can be avoided with some refactoring of existing code
+/// by making it possible to pass a context object through dlmalloc.
+struct PlasmaStoreInfo;
+extern const PlasmaStoreInfo* plasma_config;
 }  // namespace plasma
+
+#endif  // PLASMA_COMMON_H

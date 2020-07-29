@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_PB_UTIL_H
+#define RAY_GCS_PB_UTIL_H
 
 #include <memory>
 
 #include "ray/common/id.h"
 #include "ray/common/task/task_spec.h"
-#include "src/ray/protobuf/gcs.pb.h"
+#include "ray/protobuf/gcs.pb.h"
 
 namespace ray {
 
@@ -34,15 +35,13 @@ namespace gcs {
 /// \return The job table data created by this method.
 inline std::shared_ptr<ray::rpc::JobTableData> CreateJobTableData(
     const ray::JobID &job_id, bool is_dead, int64_t timestamp,
-    const std::string &driver_ip_address, int64_t driver_pid,
-    const ray::rpc::JobConfigs &job_configs = {}) {
+    const std::string &driver_ip_address, int64_t driver_pid) {
   auto job_info_ptr = std::make_shared<ray::rpc::JobTableData>();
   job_info_ptr->set_job_id(job_id.Binary());
   job_info_ptr->set_is_dead(is_dead);
   job_info_ptr->set_timestamp(timestamp);
   job_info_ptr->set_driver_ip_address(driver_ip_address);
   job_info_ptr->set_driver_pid(driver_pid);
-  *job_info_ptr->mutable_configs() = job_configs;
   return job_info_ptr;
 }
 
@@ -84,11 +83,11 @@ inline std::shared_ptr<ray::rpc::ActorTableData> CreateActorTableData(
 }
 
 /// Helper function to produce worker failure data.
-inline std::shared_ptr<ray::rpc::WorkerTableData> CreateWorkerFailureData(
+inline std::shared_ptr<ray::rpc::WorkerFailureData> CreateWorkerFailureData(
     const ClientID &raylet_id, const WorkerID &worker_id, const std::string &address,
     int32_t port, int64_t timestamp = std::time(nullptr),
     bool intentional_disconnect = false) {
-  auto worker_failure_info_ptr = std::make_shared<ray::rpc::WorkerTableData>();
+  auto worker_failure_info_ptr = std::make_shared<ray::rpc::WorkerFailureData>();
   worker_failure_info_ptr->mutable_worker_address()->set_raylet_id(raylet_id.Binary());
   worker_failure_info_ptr->mutable_worker_address()->set_worker_id(worker_id.Binary());
   worker_failure_info_ptr->mutable_worker_address()->set_ip_address(address);
@@ -116,3 +115,5 @@ inline std::shared_ptr<ray::rpc::ObjectLocationChange> CreateObjectLocationChang
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_PB_UTIL_H

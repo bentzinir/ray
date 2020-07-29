@@ -13,10 +13,7 @@
 // limitations under the License.
 
 #include "ray/util/sequencer.h"
-
-#include <chrono>
-#include <thread>
-
+#include <unistd.h>
 #include "gtest/gtest.h"
 #include "ray/util/logging.h"
 
@@ -29,7 +26,7 @@ TEST(SequencerTest, ExecuteOrderedTest) {
   int size = 100;
   for (int index = 0; index < size; ++index) {
     auto operation = [index, &queue](SequencerDoneCallback done_callback) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      usleep(1000);
       queue.push_back(index);
       done_callback();
     };
@@ -37,7 +34,7 @@ TEST(SequencerTest, ExecuteOrderedTest) {
   }
 
   while (queue.size() < (size_t)size) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    usleep(1000);
   }
 
   for (int index = 0; index < size; ++index) {

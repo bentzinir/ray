@@ -1,6 +1,7 @@
-#pragma once
+#ifndef RAY_COMMON_TASK_TASK_COMMON_H
+#define RAY_COMMON_TASK_TASK_COMMON_H
 
-#include "src/ray/protobuf/common.pb.h"
+#include "ray/protobuf/common.pb.h"
 
 namespace ray {
 
@@ -15,3 +16,5 @@ using Language = rpc::Language;
 using TaskType = rpc::TaskType;
 
 }  // namespace ray
+
+#endif

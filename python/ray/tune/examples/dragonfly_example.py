@@ -6,16 +6,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
-import time
-
 import ray
-from ray import tune
+from ray.tune import run
 from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.tune.suggest.dragonfly import DragonflySearch
 
 
-def objective(config):
+def objective(config, reporter):
+    import numpy as np
+    import time
+    time.sleep(0.2)
     for i in range(config["iterations"]):
         vol1 = config["point"][0]  # LiNO3
         vol2 = config["point"][1]  # Li2SO4
@@ -25,7 +25,7 @@ def objective(config):
         conductivity = vol1 + 0.1 * (vol2 + vol3)**2 + 2.3 * vol4 * (vol1**1.5)
         # Add Gaussian noise to simulate experimental noise
         conductivity += np.random.normal() * 0.01
-        tune.report(timesteps_total=i, objective=conductivity)
+        reporter(timesteps_total=i, objective=conductivity)
         time.sleep(0.02)
 
 
@@ -45,6 +45,9 @@ if __name__ == "__main__":
         "num_samples": 10 if args.smoke_test else 50,
         "config": {
             "iterations": 100,
+        },
+        "stop": {
+            "timesteps_total": 100
         },
     }
 
@@ -72,8 +75,7 @@ if __name__ == "__main__":
     optimizer = EuclideanGPBandit(func_caller, ask_tell_mode=True)
     algo = DragonflySearch(optimizer, metric="objective", mode="max")
     scheduler = AsyncHyperBandScheduler(metric="objective", mode="max")
-    tune.run(
-        objective,
+    run(objective,
         name="dragonfly_search",
         search_alg=algo,
         scheduler=scheduler,

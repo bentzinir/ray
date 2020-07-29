@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "ray/util/logging.h"
+#include <arrow/util/logging.h>
 
 #include "ray/object_manager/plasma/malloc.h"
 #include "ray/object_manager/plasma/plasma_allocator.h"
@@ -35,7 +35,7 @@ void* PlasmaAllocator::Memalign(size_t alignment, size_t bytes) {
     return nullptr;
   }
   void* mem = dlmemalign(alignment, bytes);
-  RAY_CHECK(mem);
+  ARROW_CHECK(mem);
   allocated_ += bytes;
   return mem;
 }

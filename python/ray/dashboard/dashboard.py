@@ -658,8 +658,8 @@ class RayletStats(threading.Thread):
             return {"status": "pending"}
 
         reply = self._profiling_stats[profiling_id]
-        if reply.std_err:
-            return {"status": "error", "error": reply.std_err}
+        if reply.stderr:
+            return {"status": "error", "error": reply.stderr}
         else:
             return {"status": "finished"}
 

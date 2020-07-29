@@ -58,8 +58,8 @@ def test_worker_failed(ray_start_workers_separate_multinode):
 
     # Submit more tasks than there are workers so that all workers and
     # cores are utilized.
-    object_refs = [f.remote(i) for i in range(num_initial_workers * num_nodes)]
-    object_refs += [f.remote(object_ref) for object_ref in object_refs]
+    object_ids = [f.remote(i) for i in range(num_initial_workers * num_nodes)]
+    object_ids += [f.remote(object_id) for object_id in object_ids]
     # Allow the tasks some time to begin executing.
     time.sleep(0.1)
     # Kill the workers as the tasks execute.
@@ -68,9 +68,9 @@ def test_worker_failed(ray_start_workers_separate_multinode):
         time.sleep(0.1)
     # Make sure that we either get the object or we get an appropriate
     # exception.
-    for object_ref in object_refs:
+    for object_id in object_ids:
         try:
-            ray.get(object_ref)
+            ray.get(object_id)
         except (ray.exceptions.RayTaskError, ray.exceptions.RayWorkerError):
             pass
 
@@ -151,6 +151,29 @@ def test_raylet_failed(ray_start_cluster):
     # The plasma stores should still be alive on the worker nodes.
     check_components_alive(cluster, ray_constants.PROCESS_TYPE_PLASMA_STORE,
                            True)
+
+
+@pytest.mark.skipif(
+    os.environ.get("RAY_USE_NEW_GCS") == "on",
+    reason="Hanging with new GCS API.")
+@pytest.mark.parametrize(
+    "ray_start_cluster", [{
+        "num_cpus": 8,
+        "num_nodes": 2,
+        "_internal_config": json.dumps({
+            "num_heartbeats_timeout": 100
+        }),
+    }],
+    indirect=True)
+def test_plasma_store_failed(ray_start_cluster):
+    cluster = ray_start_cluster
+    # Kill all plasma stores on worker nodes.
+    _test_component_failed(cluster, ray_constants.PROCESS_TYPE_PLASMA_STORE)
+
+    # No processes should be left alive on the worker nodes.
+    check_components_alive(cluster, ray_constants.PROCESS_TYPE_PLASMA_STORE,
+                           False)
+    check_components_alive(cluster, ray_constants.PROCESS_TYPE_RAYLET, False)
 
 
 if __name__ == "__main__":

@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_OBJECT_MANAGER_H
+#define RAY_GCS_OBJECT_MANAGER_H
 
-#include "ray/gcs/gcs_server/gcs_node_manager.h"
-#include "ray/gcs/gcs_server/gcs_table_storage.h"
+#include "gcs_node_manager.h"
+#include "gcs_table_storage.h"
 #include "ray/gcs/pubsub/gcs_pub_sub.h"
 #include "ray/gcs/redis_gcs_client.h"
 
@@ -139,3 +140,5 @@ class GcsObjectManager : public rpc::ObjectInfoHandler {
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_OBJECT_MANAGER_H

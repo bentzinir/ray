@@ -1,28 +1,21 @@
 import logging
-from typing import Tuple, Callable, Optional
 
 import ray
 from ray.rllib.env.base_env import BaseEnv, _DUMMY_AGENT_ID, ASYNC_RESET_RETURN
-from ray.rllib.utils.annotations import override, PublicAPI
-from ray.rllib.utils.types import MultiEnvDict, EnvType, EnvID, MultiAgentDict
 
 logger = logging.getLogger(__name__)
 
 
-@PublicAPI
 class RemoteVectorEnv(BaseEnv):
     """Vector env that executes envs in remote workers.
 
     This provides dynamic batching of inference as observations are returned
     from the remote simulator actors. Both single and multi-agent child envs
     are supported, and envs can be stepped synchronously or async.
-
-    You shouldn't need to instantiate this class directly. It's automatically
-    inserted when you use the `remote_worker_envs` option for Trainers.
     """
 
-    def __init__(self, make_env: Callable[[int], EnvType], num_envs: int,
-                 multiagent: bool, remote_env_batch_wait_ms: int):
+    def __init__(self, make_env, num_envs, multiagent,
+                 remote_env_batch_wait_ms):
         self.make_local_env = make_env
         self.num_envs = num_envs
         self.multiagent = multiagent
@@ -31,9 +24,7 @@ class RemoteVectorEnv(BaseEnv):
         self.actors = None  # lazy init
         self.pending = None  # lazy init
 
-    @override(BaseEnv)
-    def poll(self) -> Tuple[MultiEnvDict, MultiEnvDict, MultiEnvDict,
-                            MultiEnvDict, MultiEnvDict]:
+    def poll(self):
         if self.actors is None:
 
             def make_remote_env(i):
@@ -61,11 +52,11 @@ class RemoteVectorEnv(BaseEnv):
 
         # Get and return observations for each of the ready envs
         env_ids = set()
-        for obj_ref in ready:
-            actor = self.pending.pop(obj_ref)
+        for obj_id in ready:
+            actor = self.pending.pop(obj_id)
             env_id = self.actors.index(actor)
             env_ids.add(env_id)
-            ob, rew, done, info = ray.get(obj_ref)
+            ob, rew, done, info = ray.get(obj_id)
             obs[env_id] = ob
             rewards[env_id] = rew
             dones[env_id] = done
@@ -74,23 +65,19 @@ class RemoteVectorEnv(BaseEnv):
         logger.debug("Got obs batch for actors {}".format(env_ids))
         return obs, rewards, dones, infos, {}
 
-    @PublicAPI
-    def send_actions(self, action_dict: MultiEnvDict) -> None:
+    def send_actions(self, action_dict):
         for env_id, actions in action_dict.items():
             actor = self.actors[env_id]
-            obj_ref = actor.step.remote(actions)
-            self.pending[obj_ref] = actor
+            obj_id = actor.step.remote(actions)
+            self.pending[obj_id] = actor
 
-    @PublicAPI
-    def try_reset(self,
-                  env_id: Optional[EnvID] = None) -> Optional[MultiAgentDict]:
+    def try_reset(self, env_id):
         actor = self.actors[env_id]
-        obj_ref = actor.reset.remote()
-        self.pending[obj_ref] = actor
+        obj_id = actor.reset.remote()
+        self.pending[obj_id] = actor
         return ASYNC_RESET_RETURN
 
-    @PublicAPI
-    def stop(self) -> None:
+    def stop(self):
         if self.actors is not None:
             for actor in self.actors:
                 actor.__ray_terminate__.remote()

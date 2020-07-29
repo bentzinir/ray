@@ -6,6 +6,7 @@ import io.ray.api.Ray;
 import io.ray.api.WaitResult;
 import io.ray.api.function.PyActorClass;
 import io.ray.api.id.ActorId;
+import io.ray.api.options.ActorCreationOptions;
 import io.ray.streaming.api.Language;
 import io.ray.streaming.runtime.core.graph.executiongraph.ExecutionGraph;
 import io.ray.streaming.runtime.core.graph.executiongraph.ExecutionVertex;
@@ -45,18 +46,17 @@ public class WorkerLifecycleController {
 
     Language language = executionVertex.getLanguage();
 
+    ActorCreationOptions options = new ActorCreationOptions.Builder()
+        .setResources(executionVertex.getResource())
+        .setMaxRestarts(-1)
+        .createActorCreationOptions();
+
     BaseActorHandle actor;
     if (Language.JAVA == language) {
-      actor = Ray.actor(JobWorker::new)
-          .setResources(executionVertex.getResource())
-          .setMaxRestarts(-1)
-          .remote();
+      actor = Ray.createActor(JobWorker::new, options);
     } else {
-      actor = Ray.actor(
-          PyActorClass.of("ray.streaming.runtime.worker", "JobWorker"))
-          .setResources(executionVertex.getResource())
-          .setMaxRestarts(-1)
-          .remote();
+      actor = Ray.createActor(
+          new PyActorClass("ray.streaming.runtime.worker", "JobWorker"));
     }
 
     if (null == actor) {

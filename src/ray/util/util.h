@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_UTIL_UTIL_H
+#define RAY_UTIL_UTIL_H
 
 #include <chrono>
 #include <iterator>
@@ -161,7 +162,9 @@ void FillRandom(T *data) {
   std::lock_guard<std::mutex> lock(random_engine_mutex);
   static std::mt19937 generator = randomly_seeded_mersenne_twister();
   std::uniform_int_distribution<uint32_t> dist(0, std::numeric_limits<uint8_t>::max());
-  for (size_t i = 0; i < data->size(); i++) {
+  for (int i = 0; i < data->size(); i++) {
     (*data)[i] = static_cast<uint8_t>(dist(generator));
   }
 }
+
+#endif  // RAY_UTIL_UTIL_H

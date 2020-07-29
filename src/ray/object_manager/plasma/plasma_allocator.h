@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#pragma once
+#ifndef PLASMA_ALLOCATOR_H
+#define PLASMA_ALLOCATOR_H
 
 #include <cstddef>
 #include <cstdint>
@@ -59,3 +60,5 @@ class PlasmaAllocator {
 };
 
 }  // namespace plasma
+
+#endif  // ARROW_PLASMA_ALLOCATOR_H

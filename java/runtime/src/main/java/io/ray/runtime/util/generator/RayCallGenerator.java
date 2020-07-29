@@ -23,48 +23,51 @@ public class RayCallGenerator extends BaseGenerator {
     newLine("");
     newLine("package io.ray.api;");
     newLine("");
-    newLine("import io.ray.api.call.ActorCreator;");
-    newLine("import io.ray.api.call.PyActorCreator;");
-    newLine("import io.ray.api.call.PyTaskCaller;");
-    newLine("import io.ray.api.call.TaskCaller;");
-    newLine("import io.ray.api.call.VoidTaskCaller;");
     newLine("import io.ray.api.function.PyActorClass;");
-    newLine("import io.ray.api.function.PyFunction;");
+    newLine("import io.ray.api.function.PyRemoteFunction;");
     for (int i = 0; i <= MAX_PARAMETERS; i++) {
       newLine("import io.ray.api.function.RayFunc" + i + ";");
     }
     for (int i = 0; i <= MAX_PARAMETERS; i++) {
       newLine("import io.ray.api.function.RayFuncVoid" + i + ";");
     }
+    newLine("import io.ray.api.options.ActorCreationOptions;");
+    newLine("import io.ray.api.options.CallOptions;");
     newLine("");
 
     newLine("/**");
     newLine(" * This class provides type-safe interfaces for `Ray.call` and `Ray.createActor`.");
     newLine(" **/");
+    newLine("@SuppressWarnings({\"rawtypes\", \"unchecked\"})");
     newLine("class RayCall {");
     newLine(1, "// =======================================");
     newLine(1, "// Methods for remote function invocation.");
     newLine(1, "// =======================================");
     for (int i = 0; i <= MAX_PARAMETERS; i++) {
-      buildCalls(i, false, false, true);
-      buildCalls(i, false, false, false);
+      buildCalls(i, false, false, true, false);
+      buildCalls(i, false, false, true, true);
+      buildCalls(i, false, false, false, false);
+      buildCalls(i, false, false, false, true);
     }
 
     newLine(1, "// ===========================");
     newLine(1, "// Methods for actor creation.");
     newLine(1, "// ===========================");
     for (int i = 0; i <= MAX_PARAMETERS; i++) {
-      buildCalls(i, false, true, true);
+      buildCalls(i, false, true, true, false);
+      buildCalls(i, false, true, true, true);
     }
 
     newLine(1, "// ===========================");
     newLine(1, "// Cross-language methods.");
     newLine(1, "// ===========================");
     for (int i = 0; i <= MAX_PARAMETERS; i++) {
-      buildPyCalls(i, false, false);
+      buildPyCalls(i, false, false, false);
+      buildPyCalls(i, false, false, true);
     }
     for (int i = 0; i <= MAX_PARAMETERS; i++) {
-      buildPyCalls(i, false, true);
+      buildPyCalls(i, false, true, false);
+      buildPyCalls(i, false, true, true);
     }
     newLine("}");
     return sb.toString();
@@ -80,8 +83,6 @@ public class RayCallGenerator extends BaseGenerator {
     newLine("");
     newLine("package io.ray.api;");
     newLine("");
-    newLine("import io.ray.api.call.ActorTaskCaller;");
-    newLine("import io.ray.api.call.VoidActorTaskCaller;");
     for (int i = 1; i <= MAX_PARAMETERS; i++) {
       newLine("import io.ray.api.function.RayFunc" + i + ";");
     }
@@ -92,11 +93,12 @@ public class RayCallGenerator extends BaseGenerator {
     newLine("/**");
     newLine(" * This class provides type-safe interfaces for remote actor calls.");
     newLine(" **/");
+    newLine("@SuppressWarnings({\"rawtypes\", \"unchecked\"})");
     newLine("interface ActorCall<A> {");
     newLine("");
     for (int i = 0; i <= MAX_PARAMETERS - 1; i++) {
-      buildCalls(i, true, false, true);
-      buildCalls(i, true, false, false);
+      buildCalls(i, true, false, true, false);
+      buildCalls(i, true, false, false, false);
     }
     newLine("}");
     return sb.toString();
@@ -112,16 +114,16 @@ public class RayCallGenerator extends BaseGenerator {
     newLine("");
     newLine("package io.ray.api;");
     newLine("");
-    newLine("import io.ray.api.call.PyActorTaskCaller;");
     newLine("import io.ray.api.function.PyActorMethod;");
     newLine("");
     newLine("/**");
     newLine(" * This class provides type-safe interfaces for remote actor calls.");
     newLine(" **/");
+    newLine("@SuppressWarnings({\"rawtypes\", \"unchecked\"})");
     newLine("interface PyActorCall {");
     newLine("");
     for (int i = 0; i <= MAX_PARAMETERS - 1; i++) {
-      buildPyCalls(i, true, false);
+      buildPyCalls(i, true, false, false);
     }
     newLine("}");
     return sb.toString();
@@ -137,11 +139,11 @@ public class RayCallGenerator extends BaseGenerator {
    * @param forActorCreation Build `Ray.createActor` when true, otherwise build `Ray.call`.
    */
   private void buildCalls(int numParameters, boolean forActor,
-                          boolean forActorCreation, boolean hasReturn) {
+      boolean forActorCreation, boolean hasReturn, boolean hasOptionsParam) {
     // Template of the generated function:
     // [modifiers] [genericTypes] [returnType] [callFunc]([argsDeclaration]) {
     //   Objects[] args = new Object[]{[args]};
-    //   return new [Caller](func, args);
+    //   return Ray.internal().[callFunc](f[, getThis()], args[, options]);
     // }
 
     String modifiers = forActor ? "default" : "public static";
@@ -168,13 +170,9 @@ public class RayCallGenerator extends BaseGenerator {
     // 2) Construct the `returnType` part.
     String returnType;
     if (forActorCreation) {
-      returnType = "ActorCreator<A>";
+      returnType = "ActorHandle<A>";
     } else {
-      if (forActor) {
-        returnType = hasReturn ? "ActorTaskCaller<R>" : "VoidActorTaskCaller";
-      } else {
-        returnType = hasReturn ? "TaskCaller<R>" : "VoidTaskCaller";
-      }
+      returnType = hasReturn ? "ObjectRef<R>" : "void";
     }
 
     // 3) Construct the `argsDeclaration` part.
@@ -191,21 +189,16 @@ public class RayCallGenerator extends BaseGenerator {
         !forActor ? numParameters : numParameters + 1,
         rayFuncGenericTypes);
 
-    String callFunc = forActorCreation ? "actor" : "task";
-    String caller;
-    if (forActorCreation) {
-      caller = "ActorCreator<>";
-    } else {
-      if (forActor) {
-        caller = hasReturn ? "ActorTaskCaller<>" : "VoidActorTaskCaller";
-      } else {
-        caller = hasReturn ? "TaskCaller<>" : "VoidTaskCaller";
-      }
-    }
+    String callFunc = forActorCreation ? "createActor" : "call";
+    String internalCallFunc = forActorCreation ? "createActor" : forActor ? "callActor" : "call";
 
     // Enumerate all combinations of the parameters.
     for (String param : generateParameters(numParameters)) {
       String argsDeclaration = argsDeclarationPrefix + param;
+      if (hasOptionsParam) {
+        argsDeclaration +=
+            forActorCreation ? "ActorCreationOptions options, " : "CallOptions options, ";
+      }
       // Trim trailing ", ";
       argsDeclaration = argsDeclaration.substring(0, argsDeclaration.length() - 2);
       // Print the first line (method signature).
@@ -227,13 +220,15 @@ public class RayCallGenerator extends BaseGenerator {
       newLine(2, String.format("Object[] args = new Object[]{%s};", args));
 
       // 5) Construct the third line.
-      String ctrArgs = "";
+      String callFuncArgs = "";
       if (forActor) {
-        ctrArgs += "(ActorHandle) this, ";
+        callFuncArgs += "(ActorHandle) this, ";
       }
-      ctrArgs += "f, args, ";
-      ctrArgs = ctrArgs.substring(0, ctrArgs.length() - 2);
-      newLine(2, String.format("return new %s(%s);", caller, ctrArgs));
+      callFuncArgs += "f, args, ";
+      callFuncArgs += forActor ? "" : hasOptionsParam ? "options, " : "null, ";
+      callFuncArgs = callFuncArgs.substring(0, callFuncArgs.length() - 2);
+      newLine(2, String.format("%sRay.internal().%s(%s);",
+          hasReturn ? "return " : "", internalCallFunc, callFuncArgs));
       newLine(1, "}");
       newLine("");
     }
@@ -246,9 +241,12 @@ public class RayCallGenerator extends BaseGenerator {
    * @param numParameters the number of parameters
    * @param forActor Build `actor.call` when true, otherwise build `Ray.call`.
    * @param forActorCreation Build `Ray.createActor` when true, otherwise build `Ray.call`.
+   * @param hasOptionsParam Add ActorCreationOptions if forActorCreation is true;
+   *                        Add CallOptions if forActorCreation is false;
+   *                        No additional param if hasOptionsParam is false.
    */
   private void buildPyCalls(int numParameters, boolean forActor,
-                            boolean forActorCreation) {
+      boolean forActorCreation, boolean hasOptionsParam) {
     String modifiers = forActor ? "default" : "public static";
 
     String argList = "";
@@ -273,33 +271,50 @@ public class RayCallGenerator extends BaseGenerator {
       paramPrefix += "PyActorMethod<R> pyActorMethod";
       funcArgs += "pyActorMethod";
     } else {
-      paramPrefix += "PyFunction<R> pyFunction";
-      funcArgs += "pyFunction";
+      paramPrefix += "PyRemoteFunction<R> pyRemoteFunction";
+      funcArgs += "pyRemoteFunction";
     }
     if (numParameters > 0) {
       paramPrefix += ", ";
     }
 
-    String genericType = forActorCreation ? "" : " <R>";
-    String returnType = forActorCreation ? "PyActorCreator" :
-        forActor ? "PyActorTaskCaller<R>" : "PyTaskCaller<R>";
+    String optionsParam;
+    if (hasOptionsParam) {
+      optionsParam = forActorCreation ? ", ActorCreationOptions options" : ", CallOptions options";
+    } else {
+      optionsParam = "";
+    }
 
-    String funcName = forActorCreation ? "actor" : "task";
-    String caller = forActorCreation ? "PyActorCreator" :
-        forActor ? "PyActorTaskCaller<>" : "PyTaskCaller<>";
+    String optionsArg;
+    if (forActor) {
+      optionsArg = "";
+    } else {
+      if (hasOptionsParam) {
+        optionsArg = ", options";
+      } else {
+        optionsArg = ", null";
+      }
+    }
+
+    String genericType = forActorCreation ? "" : " <R>";
+    String returnType = !forActorCreation ? "ObjectRef<R>" : "PyActorHandle";
+    String funcName = forActorCreation ? "createActor" : "call";
+    String internalCallFunc = forActorCreation ? "createActor" :
+        forActor ? "callActor" : "call";
     funcArgs += ", args";
     // Method signature.
     newLine(1, String.format(
-        "%s%s %s %s(%s) {", modifiers, genericType,
-        returnType, funcName, paramPrefix + paramList
+        "%s%s %s %s(%s%s) {", modifiers, genericType,
+        returnType, funcName, paramPrefix + paramList, optionsParam
     ));
     // Method body.
     newLine(2, String.format("Object[] args = new Object[]{%s};", argList));
     if (forActor) {
-      newLine(2, String.format("return new %s((PyActorHandle)this, %s);",
-          caller, funcArgs));
+      newLine(2, String.format("return Ray.internal().%s((PyActorHandle)this, %s%s);",
+          internalCallFunc, funcArgs, optionsArg));
     } else {
-      newLine(2, String.format("return new %s(%s);", caller, funcArgs));
+      newLine(2, String.format("return Ray.internal().%s(%s%s);",
+          internalCallFunc, funcArgs, optionsArg));
     }
     newLine(1, "}");
     newLine("");
@@ -324,15 +339,15 @@ public class RayCallGenerator extends BaseGenerator {
 
   public static void main(String[] args) throws IOException {
     String path = System.getProperty("user.dir")
-        + "/api/src/main/java/io/ray/api/RayCall.java";
+        + "/api/src/main/java/io.ray/api/RayCall.java";
     FileUtils.write(new File(path), new RayCallGenerator().generateRayCallDotJava(),
         Charset.defaultCharset());
     path = System.getProperty("user.dir")
-        + "/api/src/main/java/io/ray/api/ActorCall.java";
+        + "/api/src/main/java/io.ray/api/ActorCall.java";
     FileUtils.write(new File(path), new RayCallGenerator().generateActorCallDotJava(),
         Charset.defaultCharset());
     path = System.getProperty("user.dir")
-        + "/api/src/main/java/io/ray/api/PyActorCall.java";
+        + "/api/src/main/java/io.ray/api/PyActorCall.java";
     FileUtils.write(new File(path), new RayCallGenerator().generatePyActorCallDotJava(),
         Charset.defaultCharset());
   }

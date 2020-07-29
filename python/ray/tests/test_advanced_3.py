@@ -2,9 +2,12 @@
 import glob
 import logging
 import os
+import shutil
 import json
 import sys
 import socket
+import subprocess
+import tempfile
 import time
 
 import numpy as np
@@ -17,8 +20,7 @@ import ray.cluster_utils
 import ray.test_utils
 import setproctitle
 
-from ray.test_utils import (check_call_ray, RayTestTimeoutException,
-                            wait_for_num_actors)
+from ray.test_utils import RayTestTimeoutException
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,15 @@ def test_load_balancing_with_dependencies(ray_start_cluster):
     attempt_to_load_balance(f, [x], 100, num_nodes, 25)
 
 
+def wait_for_num_actors(num_actors, timeout=10):
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if len(ray.actors()) >= num_actors:
+            return
+        time.sleep(0.1)
+    raise RayTestTimeoutException("Timed out while waiting for global state.")
+
+
 def wait_for_num_objects(num_objects, timeout=10):
     start_time = time.time()
     while time.time() - start_time < timeout:
@@ -117,7 +128,7 @@ def test_global_state_api(shutdown_only):
 
     # A driver/worker creates a temporary object during startup. Although the
     # temporary object is freed immediately, in a rare case, we can still find
-    # the object ref in GCS because Raylet removes the object ref from GCS
+    # the object ID in GCS because Raylet removes the object ID from GCS
     # asynchronously.
     # Because we can't control when workers create the temporary objects, so
     # We can't assert that `ray.objects()` returns an empty dict. Here we just
@@ -279,22 +290,22 @@ def test_specific_job_id():
     ray.shutdown()
 
 
-def test_object_ref_properties():
+def test_object_id_properties():
     id_bytes = b"00112233445566778899"
-    object_ref = ray.ObjectRef(id_bytes)
-    assert object_ref.binary() == id_bytes
-    object_ref = ray.ObjectRef.nil()
-    assert object_ref.is_nil()
+    object_id = ray.ObjectID(id_bytes)
+    assert object_id.binary() == id_bytes
+    object_id = ray.ObjectID.nil()
+    assert object_id.is_nil()
     with pytest.raises(ValueError, match=r".*needs to have length 20.*"):
-        ray.ObjectRef(id_bytes + b"1234")
+        ray.ObjectID(id_bytes + b"1234")
     with pytest.raises(ValueError, match=r".*needs to have length 20.*"):
-        ray.ObjectRef(b"0123456789")
-    object_ref = ray.ObjectRef.from_random()
-    assert not object_ref.is_nil()
-    assert object_ref.binary() != id_bytes
-    id_dumps = pickle.dumps(object_ref)
+        ray.ObjectID(b"0123456789")
+    object_id = ray.ObjectID.from_random()
+    assert not object_id.is_nil()
+    assert object_id.binary() != id_bytes
+    id_dumps = pickle.dumps(object_id)
     id_from_dumps = pickle.loads(id_dumps)
-    assert id_from_dumps == object_ref
+    assert id_from_dumps == object_id
 
 
 @pytest.fixture
@@ -402,8 +413,7 @@ def test_ray_stack(ray_start_2_cpus):
     start_time = time.time()
     while time.time() - start_time < 30:
         # Attempt to parse the "ray stack" call.
-        output = ray.utils.decode(
-            check_call_ray(["stack"], capture_stdout=True))
+        output = ray.utils.decode(subprocess.check_output(["ray", "stack"]))
         if ("unique_name_1" in output and "unique_name_2" in output
                 and "unique_name_3" in output):
             success = True
@@ -414,14 +424,31 @@ def test_ray_stack(ray_start_2_cpus):
                         "'ray stack'")
 
 
+def test_pandas_parquet_serialization():
+    # Only test this if pandas is installed
+    pytest.importorskip("pandas")
+
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    tempdir = tempfile.mkdtemp()
+    filename = os.path.join(tempdir, "parquet-test")
+    pd.DataFrame({"col1": [0, 1], "col2": [0, 1]}).to_parquet(filename)
+    with open(os.path.join(tempdir, "parquet-compression"), "wb") as f:
+        table = pa.Table.from_arrays([pa.array([1, 2, 3])], ["hello"])
+        pq.write_table(table, f, compression="lz4")
+    # Clean up
+    shutil.rmtree(tempdir)
+
+
 def test_socket_dir_not_existing(shutdown_only):
-    if sys.platform != "win32":
-        random_name = ray.ObjectRef.from_random().hex()
-        temp_raylet_socket_dir = os.path.join(ray.utils.get_ray_temp_dir(),
-                                              "tests", random_name)
-        temp_raylet_socket_name = os.path.join(temp_raylet_socket_dir,
-                                               "raylet_socket")
-        ray.init(num_cpus=1, raylet_socket_name=temp_raylet_socket_name)
+    random_name = ray.ObjectID.from_random().hex()
+    temp_raylet_socket_dir = os.path.join(ray.utils.get_ray_temp_dir(),
+                                          "tests", random_name)
+    temp_raylet_socket_name = os.path.join(temp_raylet_socket_dir,
+                                           "raylet_socket")
+    ray.init(num_cpus=1, raylet_socket_name=temp_raylet_socket_name)
 
 
 def test_raylet_is_robust_to_random_messages(ray_start_regular):
@@ -466,26 +493,25 @@ def test_shutdown_disconnect_global_state():
 @pytest.mark.parametrize(
     "ray_start_object_store_memory", [150 * 1024 * 1024], indirect=True)
 def test_put_pins_object(ray_start_object_store_memory):
-    obj = np.ones(200 * 1024, dtype=np.uint8)
-    x_id = ray.put(obj)
+    x_id = ray.put("HI")
     x_binary = x_id.binary()
-    assert (ray.get(ray.ObjectRef(x_binary)) == obj).all()
+    assert ray.get(ray.ObjectID(x_binary)) == "HI"
 
     # x cannot be evicted since x_id pins it
     for _ in range(10):
         ray.put(np.zeros(10 * 1024 * 1024))
-    assert (ray.get(x_id) == obj).all()
-    assert (ray.get(ray.ObjectRef(x_binary)) == obj).all()
+    assert ray.get(x_id) == "HI"
+    assert ray.get(ray.ObjectID(x_binary)) == "HI"
 
     # now it can be evicted since x_id pins it but x_binary does not
     del x_id
     for _ in range(10):
         ray.put(np.zeros(10 * 1024 * 1024))
     assert not ray.worker.global_worker.core_worker.object_exists(
-        ray.ObjectRef(x_binary))
+        ray.ObjectID(x_binary))
 
     # weakref put
-    y_id = ray.put(obj, weakref=True)
+    y_id = ray.put("HI", weakref=True)
     for _ in range(10):
         ray.put(np.zeros(10 * 1024 * 1024))
     with pytest.raises(ray.exceptions.UnreconstructableError):
@@ -512,7 +538,7 @@ def test_decorated_function(ray_start_regular):
 
 
 def test_get_postprocess(ray_start_regular):
-    def get_postprocessor(object_refs, values):
+    def get_postprocessor(object_ids, values):
         return [value for value in values if value > 0]
 
     ray.worker.global_worker._post_get_hooks.append(get_postprocessor)
@@ -639,10 +665,10 @@ def test_lease_request_leak(shutdown_only):
     # from the raylet.
     tasks = []
     for _ in range(10):
-        obj_ref = ray.put(1)
+        oid = ray.put(1)
         for _ in range(2):
-            tasks.append(f.remote(obj_ref))
-        del obj_ref
+            tasks.append(f.remote(oid))
+        del oid
     ray.get(tasks)
 
     time.sleep(

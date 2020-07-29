@@ -17,7 +17,7 @@ import ray.ray_constants as ray_constants
 import ray.services
 import ray.utils
 from ray.resource_spec import ResourceSpec
-from ray.utils import try_to_create_directory, try_to_symlink, open_log
+from ray.utils import try_to_create_directory, try_to_symlink
 
 # Logger for this module. It should be configured at the entry point
 # into the program using Ray. Ray configures it by default automatically
@@ -92,15 +92,6 @@ class Node:
                 "The raylet IP address should only be different than the node "
                 "IP address when connecting to an existing raylet; i.e., when "
                 "head=False and connect_only=True.")
-        if ray_params._internal_config and len(
-                ray_params._internal_config) > 0 and (not head
-                                                      and not connect_only):
-            raise ValueError(
-                "Internal config parameters can only be set on the head node.")
-
-        if ray_params._lru_evict:
-            assert (connect_only or
-                    head), "LRU Evict can only be passed into the head node."
 
         self._raylet_ip_address = raylet_ip_address
 
@@ -108,7 +99,6 @@ class Node:
             include_log_monitor=True,
             resources={},
             temp_dir=ray.utils.get_ray_temp_dir(),
-            metrics_agent_port=self._get_unused_port()[0],
             worker_path=os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 "workers/default_worker.py"))
@@ -117,11 +107,7 @@ class Node:
         self._localhost = socket.gethostbyname("localhost")
         self._ray_params = ray_params
         self._redis_address = ray_params.redis_address
-        self._config = ray_params._internal_config or {}
-
-        # Enable Plasma Store as a thread by default.
-        if "plasma_store_as_thread" not in self._config:
-            self._config["plasma_store_as_thread"] = True
+        self._config = ray_params._internal_config
 
         if head:
             redis_client = None
@@ -254,8 +240,7 @@ class Node:
                 self._ray_params.num_cpus, self._ray_params.num_gpus,
                 self._ray_params.memory, self._ray_params.object_store_memory,
                 self._ray_params.resources,
-                self._ray_params.redis_max_memory).resolve(
-                    is_head=self.head, node_ip_address=self.node_ip_address)
+                self._ray_params.redis_max_memory).resolve(is_head=self.head)
         return self._resource_spec
 
     @property
@@ -288,9 +273,9 @@ class Node:
         return self._ray_params.load_code_from_local
 
     @property
-    def object_ref_seed(self):
-        """Get the seed for deterministic generation of object refs"""
-        return self._ray_params.object_ref_seed
+    def object_id_seed(self):
+        """Get the seed for deterministic generation of object IDs"""
+        return self._ray_params.object_id_seed
 
     @property
     def plasma_store_socket_name(self):
@@ -394,19 +379,14 @@ class Node:
         raise FileExistsError(errno.EEXIST,
                               "No usable temporary filename found")
 
-    def get_log_file_handles(self, name, unique=False):
-        """Open log files with partially randomized filenames, returning the
-        file handles. If output redirection has been disabled, no files will
-        be opened and `(None, None)` will be returned.
+    def new_log_files(self, name):
+        """Generate partially randomized filenames for log files.
 
         Args:
             name (str): descriptive string for this log file.
-            unique (bool): if true, a counter will be attached to `name` to
-                ensure the returned filename is not already used.
 
         Returns:
-            A tuple of two file handles for redirecting (stdout, stderr), or
-            `(None, None)` if output redirection is disabled.
+            A tuple of two file handles for redirecting (stdout, stderr).
         """
         redirect_output = self._ray_params.redirect_output
 
@@ -417,30 +397,14 @@ class Node:
         if not redirect_output:
             return None, None
 
-        log_stdout, log_stderr = self._get_log_file_names(name, unique=unique)
-        return open_log(log_stdout), open_log(log_stderr)
-
-    def _get_log_file_names(self, name, unique=False):
-        """Generate partially randomized filenames for log files.
-
-        Args:
-            name (str): descriptive string for this log file.
-            unique (bool): if true, a counter will be attached to `name` to
-                ensure the returned filename is not already used.
-
-        Returns:
-            A tuple of two file names for redirecting (stdout, stderr).
-        """
-
-        if unique:
-            log_stdout = self._make_inc_temp(
-                suffix=".out", prefix=name, directory_name=self._logs_dir)
-            log_stderr = self._make_inc_temp(
-                suffix=".err", prefix=name, directory_name=self._logs_dir)
-        else:
-            log_stdout = os.path.join(self._logs_dir, "{}.out".format(name))
-            log_stderr = os.path.join(self._logs_dir, "{}.err".format(name))
-        return log_stdout, log_stderr
+        log_stdout = self._make_inc_temp(
+            suffix=".out", prefix=name, directory_name=self._logs_dir)
+        log_stderr = self._make_inc_temp(
+            suffix=".err", prefix=name, directory_name=self._logs_dir)
+        # Line-buffer the output (mode 1).
+        log_stdout_file = open(log_stdout, "a", buffering=1)
+        log_stderr_file = open(log_stderr, "a", buffering=1)
+        return log_stdout_file, log_stderr_file
 
     def _get_unused_port(self, close_on_exit=True):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -519,11 +483,9 @@ class Node:
     def start_redis(self):
         """Start the Redis servers."""
         assert self._redis_address is None
-        redis_log_files = [self.get_log_file_handles("redis", unique=True)]
+        redis_log_files = [self.new_log_files("redis")]
         for i in range(self._ray_params.num_redis_shards):
-            redis_log_files.append(
-                self.get_log_file_handles(
-                    "redis-shard_{}".format(i), unique=True))
+            redis_log_files.append(self.new_log_files("redis-shard_" + str(i)))
 
         (self._redis_address, redis_shards,
          process_infos) = ray.services.start_redis(
@@ -545,8 +507,7 @@ class Node:
 
     def start_log_monitor(self):
         """Start the log monitor."""
-        stdout_file, stderr_file = self.get_log_file_handles(
-            "log_monitor", unique=True)
+        stdout_file, stderr_file = self.new_log_files("log_monitor")
         process_info = ray.services.start_log_monitor(
             self.redis_address,
             self._logs_dir,
@@ -561,11 +522,9 @@ class Node:
 
     def start_reporter(self):
         """Start the reporter."""
-        stdout_file, stderr_file = self.get_log_file_handles(
-            "reporter", unique=True)
+        stdout_file, stderr_file = self.new_log_files("reporter")
         process_info = ray.services.start_reporter(
             self.redis_address,
-            self._ray_params.metrics_agent_port,
             stdout_file=stdout_file,
             stderr_file=stderr_file,
             redis_password=self._ray_params.redis_password,
@@ -576,26 +535,24 @@ class Node:
                 process_info,
             ]
 
-    def start_dashboard(self, require_dashboard):
+    def start_dashboard(self, require_webui):
         """Start the dashboard.
 
         Args:
-            require_dashboard (bool): If true, this will raise an exception
-                if we fail to start the dashboard. Otherwise it will print
-                a warning if we fail to start the dashboard.
+            require_webui (bool): If true, this will raise an exception if we
+                fail to start the webui. Otherwise it will print a warning if
+                we fail to start the webui.
         """
-        stdout_file, stderr_file = self.get_log_file_handles(
-            "dashboard", unique=True)
+        stdout_file, stderr_file = self.new_log_files("dashboard")
         self._webui_url, process_info = ray.services.start_dashboard(
-            require_dashboard,
-            self._ray_params.dashboard_host,
+            require_webui,
+            self._ray_params.webui_host,
             self.redis_address,
             self._temp_dir,
             stdout_file=stdout_file,
             stderr_file=stderr_file,
             redis_password=self._ray_params.redis_password,
-            fate_share=self.kernel_fate_share,
-            port=self._ray_params.dashboard_port)
+            fate_share=self.kernel_fate_share)
         assert ray_constants.PROCESS_TYPE_DASHBOARD not in self.all_processes
         if process_info is not None:
             self.all_processes[ray_constants.PROCESS_TYPE_DASHBOARD] = [
@@ -606,8 +563,7 @@ class Node:
 
     def start_plasma_store(self):
         """Start the plasma store."""
-        stdout_file, stderr_file = self.get_log_file_handles(
-            "plasma_store", unique=True)
+        stdout_file, stderr_file = self.new_log_files("plasma_store")
         process_info = ray.services.start_plasma_store(
             self.get_resource_spec(),
             self._plasma_store_socket_name,
@@ -615,7 +571,6 @@ class Node:
             stderr_file=stderr_file,
             plasma_directory=self._ray_params.plasma_directory,
             huge_pages=self._ray_params.huge_pages,
-            keep_idle=bool(self._config.get("plasma_store_as_thread")),
             fate_share=self.kernel_fate_share)
         assert (
             ray_constants.PROCESS_TYPE_PLASMA_STORE not in self.all_processes)
@@ -626,17 +581,14 @@ class Node:
     def start_gcs_server(self):
         """Start the gcs server.
         """
-        stdout_file, stderr_file = self.get_log_file_handles(
-            "gcs_server", unique=True)
+        stdout_file, stderr_file = self.new_log_files("gcs_server")
         process_info = ray.services.start_gcs_server(
             self._redis_address,
             stdout_file=stdout_file,
             stderr_file=stderr_file,
             redis_password=self._ray_params.redis_password,
             config=self._config,
-            fate_share=self.kernel_fate_share,
-            gcs_server_port=self._ray_params.gcs_server_port,
-            metrics_agent_port=self._ray_params.metrics_agent_port)
+            fate_share=self.kernel_fate_share)
         assert (
             ray_constants.PROCESS_TYPE_GCS_SERVER not in self.all_processes)
         self.all_processes[ray_constants.PROCESS_TYPE_GCS_SERVER] = [
@@ -652,8 +604,7 @@ class Node:
             use_profiler (bool): True if we should start the process in the
                 valgrind profiler.
         """
-        stdout_file, stderr_file = self.get_log_file_handles(
-            "raylet", unique=True)
+        stdout_file, stderr_file = self.new_log_files("raylet")
         process_info = ray.services.start_raylet(
             self._redis_address,
             self._node_ip_address,
@@ -668,7 +619,6 @@ class Node:
             self._ray_params.max_worker_port,
             self._ray_params.object_manager_port,
             self._ray_params.redis_password,
-            self._ray_params.metrics_agent_port,
             use_valgrind=use_valgrind,
             use_profiler=use_profiler,
             stdout_file=stdout_file,
@@ -677,47 +627,15 @@ class Node:
             include_java=self._ray_params.include_java,
             java_worker_options=self._ray_params.java_worker_options,
             load_code_from_local=self._ray_params.load_code_from_local,
-            plasma_directory=self._ray_params.plasma_directory,
-            huge_pages=self._ray_params.huge_pages,
             fate_share=self.kernel_fate_share,
-            socket_to_use=self.socket,
-            head_node=self.head)
+            socket_to_use=self.socket)
         assert ray_constants.PROCESS_TYPE_RAYLET not in self.all_processes
         self.all_processes[ray_constants.PROCESS_TYPE_RAYLET] = [process_info]
 
-    def get_job_redirected_log_file(self,
-                                    worker_id: bytes,
-                                    job_id: bytes = None):
-        """Determines (but does not create) logging files for workers to
-        redirect its output.
-
-        Args:
-            worker_id (bytes): A byte representation of the worker id.
-            job_id (bytes): A byte representation of the job id. If None,
-                provides a generic log file for the worker.
-
-        Returns:
-            (tuple) The stdout and stderr file names that the job should be
-        redirected to.
-        """
-        redirect_output = self._ray_params.redirect_output
-
-        if redirect_output is None:
-            # Make the default behavior match that of glog.
-            redirect_output = os.getenv("GLOG_logtostderr") != "1"
-
-        if not redirect_output:
-            return None, None
-
-        if job_id is not None:
-            name = "worker-{}-{}".format(
-                ray.utils.binary_to_hex(worker_id),
-                ray.utils.binary_to_hex(job_id))
-        else:
-            name = "worker-{}".format(ray.utils.binary_to_hex(worker_id))
-
-        worker_stdout_file, worker_stderr_file = self._get_log_file_names(
-            name, unique=False)
+    def new_worker_redirected_log_file(self, worker_id):
+        """Create new logging files for workers to redirect its output."""
+        worker_stdout_file, worker_stderr_file = (
+            self.new_log_files("worker-" + ray.utils.binary_to_hex(worker_id)))
         return worker_stdout_file, worker_stderr_file
 
     def start_worker(self):
@@ -726,8 +644,7 @@ class Node:
 
     def start_monitor(self):
         """Start the monitor."""
-        stdout_file, stderr_file = self.get_log_file_handles(
-            "monitor", unique=True)
+        stdout_file, stderr_file = self.new_log_files("monitor")
         process_info = ray.services.start_monitor(
             self._redis_address,
             stdout_file=stdout_file,
@@ -738,6 +655,22 @@ class Node:
         assert ray_constants.PROCESS_TYPE_MONITOR not in self.all_processes
         self.all_processes[ray_constants.PROCESS_TYPE_MONITOR] = [process_info]
 
+    def start_raylet_monitor(self):
+        """Start the raylet monitor."""
+        stdout_file, stderr_file = self.new_log_files("raylet_monitor")
+        process_info = ray.services.start_raylet_monitor(
+            self._redis_address,
+            stdout_file=stdout_file,
+            stderr_file=stderr_file,
+            redis_password=self._ray_params.redis_password,
+            config=self._config,
+            fate_share=self.kernel_fate_share)
+        assert (ray_constants.PROCESS_TYPE_RAYLET_MONITOR not in
+                self.all_processes)
+        self.all_processes[ray_constants.PROCESS_TYPE_RAYLET_MONITOR] = [
+            process_info,
+        ]
+
     def start_head_processes(self):
         """Start head processes on the node."""
         logger.debug(
@@ -747,14 +680,17 @@ class Node:
         # If this is the head node, start the relevant head node processes.
         self.start_redis()
 
-        self.start_gcs_server()
+        if ray_constants.GCS_SERVICE_ENABLED:
+            self.start_gcs_server()
+        else:
+            self.start_raylet_monitor()
 
         self.start_monitor()
 
-        if self._ray_params.include_dashboard:
-            self.start_dashboard(require_dashboard=True)
-        elif self._ray_params.include_dashboard is None:
-            self.start_dashboard(require_dashboard=False)
+        if self._ray_params.include_webui:
+            self.start_dashboard(require_webui=True)
+        elif self._ray_params.include_webui is None:
+            self.start_dashboard(require_webui=False)
 
     def start_ray_processes(self):
         """Start all of the processes on the node."""
@@ -932,6 +868,16 @@ class Node:
         """
         self._kill_process_type(
             ray_constants.PROCESS_TYPE_GCS_SERVER, check_alive=check_alive)
+
+    def kill_raylet_monitor(self, check_alive=True):
+        """Kill the raylet monitor.
+
+        Args:
+            check_alive (bool): Raise an exception if the process was already
+                dead.
+        """
+        self._kill_process_type(
+            ray_constants.PROCESS_TYPE_RAYLET_MONITOR, check_alive=check_alive)
 
     def kill_reaper(self, check_alive=True):
         """Kill the reaper process.

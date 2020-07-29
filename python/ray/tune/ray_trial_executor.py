@@ -102,7 +102,7 @@ class RayTrialExecutor(TrialExecutor):
         self._trial_queued = False
         self._running = {}
         # Since trial resume after paused should not run
-        # trial.train.remote(), thus no more new remote object ref generated.
+        # trial.train.remote(), thus no more new remote object id generated.
         # We use self._paused to store paused trials here.
         self._paused = {}
 
@@ -669,10 +669,11 @@ class RayTrialExecutor(TrialExecutor):
             elif trial.sync_on_checkpoint:
                 # This provides FT backwards compatibility in the
                 # case where a DurableTrainable is not provided.
-                logger.debug("Trial %s: Reading checkpoint into memory", trial)
-                obj = TrainableUtil.checkpoint_to_object(value)
+                logger.warning("Trial %s: Reading checkpoint into memory.",
+                               trial)
+                data_dict = TrainableUtil.pickle_checkpoint(value)
                 with self._change_working_directory(trial):
-                    remote = trial.runner.restore_from_object.remote(obj)
+                    remote = trial.runner.restore_from_object.remote(data_dict)
             else:
                 raise AbortTrialExecution(
                     "Pass in `sync_on_checkpoint=True` for driver-based trial"
