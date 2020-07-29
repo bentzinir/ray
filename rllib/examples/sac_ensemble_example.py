@@ -15,6 +15,7 @@ parser.add_argument("--tfe", action="store_true")
 parser.add_argument("--shared_actor", action="store_true")
 parser.add_argument("--ensemble_size", type=int, default=1)
 parser.add_argument("--timescale", type=int, default=10000)
+parser.add_argument("--timescale_grid_search", action="store_true")
 parser.add_argument("--timesteps", type=int, default=1000000)
 parser.add_argument("--verbose", type=int, default=1)
 parser.add_argument("--num_workers", type=int, default=1)
@@ -96,7 +97,7 @@ if __name__ == "__main__":
             'train_batch_size': batch_scale * args.batch_size,
             'experience_masking': args.experience_masking,
             'gamma': args.gamma,
-            'alpha': tune.grid_search([0.4, 0.3, 0.2, 0.1]) if args.alpha_grid_search else args.alpha,
+            'alpha': tune.grid_search([0.5, 0.4, 0.3, 0.2, 0.1]) if args.alpha_grid_search else args.alpha,
     }
 
     ray.init(num_cpus=args.num_cpus or None,
