@@ -158,18 +158,3 @@ cdef extern from "ray/common/id.h" namespace "ray" nogil:
 
         @staticmethod
         CWorkerID FromBinary(const c_string &binary)
-
-    cdef cppclass CPlacementGroupID "ray::PlacementGroupID" \
-                                    (CBaseID[CPlacementGroupID]):
-
-        @staticmethod
-        CPlacementGroupID FromBinary(const c_string &binary)
-
-        @staticmethod
-        const CActorID Nil()
-
-        @staticmethod
-        size_t Size()
-
-        @staticmethod
-        CPlacementGroupID FromRandom()

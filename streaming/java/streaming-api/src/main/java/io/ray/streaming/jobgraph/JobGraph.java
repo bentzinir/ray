@@ -5,8 +5,6 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,24 +17,15 @@ public class JobGraph implements Serializable {
 
   private final String jobName;
   private final Map<String, String> jobConfig;
-  private List<JobVertex> jobVertices;
-  private List<JobEdge> jobEdges;
+  private List<JobVertex> jobVertexList;
+  private List<JobEdge> jobEdgeList;
   private String digraph;
 
   public JobGraph(String jobName, Map<String, String> jobConfig) {
     this.jobName = jobName;
     this.jobConfig = jobConfig;
-    this.jobVertices = new ArrayList<>();
-    this.jobEdges = new ArrayList<>();
-  }
-
-  public JobGraph(String jobName, Map<String, String> jobConfig,
-                  List<JobVertex> jobVertices, List<JobEdge> jobEdges) {
-    this.jobName = jobName;
-    this.jobConfig = jobConfig;
-    this.jobVertices = jobVertices;
-    this.jobEdges = jobEdges;
-    generateDigraph();
+    this.jobVertexList = new ArrayList<>();
+    this.jobEdgeList = new ArrayList<>();
   }
 
   /**
@@ -47,12 +36,12 @@ public class JobGraph implements Serializable {
    */
   public String generateDigraph() {
     StringBuilder digraph = new StringBuilder();
-    digraph.append("digraph ").append(jobName).append(" ").append(" {");
+    digraph.append("digraph ").append(jobName + " ").append(" {");
 
-    for (JobEdge jobEdge : jobEdges) {
+    for (JobEdge jobEdge : jobEdgeList) {
       String srcNode = null;
       String targetNode = null;
-      for (JobVertex jobVertex : jobVertices) {
+      for (JobVertex jobVertex : jobVertexList) {
         if (jobEdge.getSrcVertexId() == jobVertex.getVertexId()) {
           srcNode = jobVertex.getVertexId() + "-" + jobVertex.getStreamOperator().getName();
         } else if (jobEdge.getTargetVertexId() == jobVertex.getVertexId()) {
@@ -60,7 +49,7 @@ public class JobGraph implements Serializable {
         }
       }
       digraph.append(System.getProperty("line.separator"));
-      digraph.append(String.format("  \"%s\" -> \"%s\"", srcNode, targetNode));
+      digraph.append(srcNode).append(" -> ").append(targetNode);
     }
     digraph.append(System.getProperty("line.separator")).append("}");
 
@@ -69,47 +58,19 @@ public class JobGraph implements Serializable {
   }
 
   public void addVertex(JobVertex vertex) {
-    this.jobVertices.add(vertex);
+    this.jobVertexList.add(vertex);
   }
 
   public void addEdge(JobEdge jobEdge) {
-    this.jobEdges.add(jobEdge);
+    this.jobEdgeList.add(jobEdge);
   }
 
-  public List<JobVertex> getJobVertices() {
-    return jobVertices;
+  public List<JobVertex> getJobVertexList() {
+    return jobVertexList;
   }
 
-  public List<JobVertex> getSourceVertices() {
-    return jobVertices.stream()
-        .filter(v -> v.getVertexType() == VertexType.SOURCE)
-        .collect(Collectors.toList());
-  }
-
-  public List<JobVertex> getSinkVertices() {
-    return jobVertices.stream()
-        .filter(v -> v.getVertexType() == VertexType.SINK)
-        .collect(Collectors.toList());
-  }
-
-  public JobVertex getVertex(int vertexId) {
-    return jobVertices.stream().filter(v -> v.getVertexId() == vertexId).findFirst().get();
-  }
-
-  public List<JobEdge> getJobEdges() {
-    return jobEdges;
-  }
-
-  public Set<JobEdge> getVertexInputEdges(int vertexId) {
-    return jobEdges.stream()
-        .filter(jobEdge -> jobEdge.getTargetVertexId() == vertexId)
-        .collect(Collectors.toSet());
-  }
-
-  public Set<JobEdge> getVertexOutputEdges(int vertexId) {
-    return jobEdges.stream()
-        .filter(jobEdge -> jobEdge.getSrcVertexId() == vertexId)
-        .collect(Collectors.toSet());
+  public List<JobEdge> getJobEdgeList() {
+    return jobEdgeList;
   }
 
   public String getDigraph() {
@@ -129,17 +90,17 @@ public class JobGraph implements Serializable {
       return;
     }
     LOG.info("Printing job graph:");
-    for (JobVertex jobVertex : jobVertices) {
+    for (JobVertex jobVertex : jobVertexList) {
       LOG.info(jobVertex.toString());
     }
-    for (JobEdge jobEdge : jobEdges) {
+    for (JobEdge jobEdge : jobEdgeList) {
       LOG.info(jobEdge.toString());
     }
   }
 
   public boolean isCrossLanguageGraph() {
-    Language language = jobVertices.get(0).getLanguage();
-    for (JobVertex jobVertex : jobVertices) {
+    Language language = jobVertexList.get(0).getLanguage();
+    for (JobVertex jobVertex : jobVertexList) {
       if (jobVertex.getLanguage() != language) {
         return true;
       }

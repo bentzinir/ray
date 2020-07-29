@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_OBJECT_MANAGER_OBJECT_BUFFER_POOL_H
+#define RAY_OBJECT_MANAGER_OBJECT_BUFFER_POOL_H
 
 #include <list>
 #include <memory>
@@ -22,6 +23,8 @@
 #include <boost/asio.hpp>
 #include <boost/asio/error.hpp>
 #include <boost/bind.hpp>
+
+#include "ray/object_manager/plasma/client.h"
 
 #include "ray/common/id.h"
 #include "ray/common/status.h"
@@ -208,3 +211,5 @@ class ObjectBufferPool {
 };
 
 }  // namespace ray
+
+#endif  // RAY_OBJECT_MANAGER_OBJECT_BUFFER_POOL_H

@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_TABLES_H
+#define RAY_GCS_TABLES_H
 
 #include <map>
 #include <string>
@@ -25,8 +26,8 @@
 #include "ray/gcs/callback.h"
 #include "ray/gcs/entry_change_notification.h"
 #include "ray/gcs/redis_context.h"
+#include "ray/protobuf/gcs.pb.h"
 #include "ray/util/logging.h"
-#include "src/ray/protobuf/gcs.pb.h"
 
 struct redisAsyncContext;
 
@@ -52,7 +53,7 @@ using rpc::TablePubsub;
 using rpc::TaskLeaseData;
 using rpc::TaskReconstructionData;
 using rpc::TaskTableData;
-using rpc::WorkerTableData;
+using rpc::WorkerFailureData;
 
 class RedisContext;
 
@@ -754,15 +755,15 @@ class ActorTable : public Table<ActorID, ActorTableData> {
   Status Get(const ActorID &actor_id, ActorTableData *actor_table_data);
 };
 
-class WorkerTable : public Table<WorkerID, WorkerTableData> {
+class WorkerFailureTable : public Table<WorkerID, WorkerFailureData> {
  public:
-  WorkerTable(const std::vector<std::shared_ptr<RedisContext>> &contexts,
-              RedisGcsClient *client)
+  WorkerFailureTable(const std::vector<std::shared_ptr<RedisContext>> &contexts,
+                     RedisGcsClient *client)
       : Table(contexts, client) {
     pubsub_channel_ = TablePubsub::WORKER_FAILURE_PUBSUB;
-    prefix_ = TablePrefix::WORKERS;
+    prefix_ = TablePrefix::WORKER_FAILURE;
   }
-  virtual ~WorkerTable() {}
+  virtual ~WorkerFailureTable() {}
 };
 
 class TaskReconstructionLog : public Log<TaskID, TaskReconstructionData> {
@@ -1023,3 +1024,5 @@ class ClientTable : public Log<ClientID, GcsNodeInfo> {
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_TABLES_H

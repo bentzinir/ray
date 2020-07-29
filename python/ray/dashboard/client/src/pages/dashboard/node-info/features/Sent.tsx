@@ -1,16 +1,13 @@
 import { Typography } from "@material-ui/core";
 import React from "react";
 import { formatByteAmount } from "../../../../common/formatUtils";
-import { Accessor } from "../../../../common/tableUtils";
 import {
-  ClusterFeatureRenderFn,
-  NodeFeatureData,
-  NodeFeatureRenderFn,
-  NodeInfoFeature,
-  WorkerFeatureRenderFn,
+  ClusterFeatureComponent,
+  NodeFeatureComponent,
+  WorkerFeatureComponent,
 } from "./types";
 
-export const ClusterSent: ClusterFeatureRenderFn = ({ nodes }) => {
+export const ClusterSent: ClusterFeatureComponent = ({ nodes }) => {
   let totalSent = 0;
   for (const node of nodes) {
     totalSent += node.net[0];
@@ -20,25 +17,12 @@ export const ClusterSent: ClusterFeatureRenderFn = ({ nodes }) => {
   );
 };
 
-export const NodeSent: NodeFeatureRenderFn = ({ node }) => (
+export const NodeSent: NodeFeatureComponent = ({ node }) => (
   <React.Fragment>{formatByteAmount(node.net[0], "mebibyte")}/s</React.Fragment>
 );
 
-export const nodeSentAccessor: Accessor<NodeFeatureData> = ({ node }) =>
-  node.net[0];
-
-export const WorkerSent: WorkerFeatureRenderFn = () => (
+export const WorkerSent: WorkerFeatureComponent = () => (
   <Typography color="textSecondary" component="span" variant="inherit">
     N/A
   </Typography>
 );
-
-const sentFeature: NodeInfoFeature = {
-  id: "sent",
-  ClusterFeatureRenderFn: ClusterSent,
-  NodeFeatureRenderFn: NodeSent,
-  WorkerFeatureRenderFn: WorkerSent,
-  nodeAccessor: nodeSentAccessor,
-};
-
-export default sentFeature;

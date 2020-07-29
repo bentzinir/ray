@@ -1,4 +1,3 @@
-from datetime import timedelta
 import numpy as np
 import logging
 import os
@@ -17,8 +16,7 @@ from ray.util.sgd.torch.distributed_torch_runner import (
     DistributedTorchRunner, LocalDistributedRunner, DeactivatedRunner)
 from ray.util.sgd.utils import check_for_failure, NUM_SAMPLES, BATCH_SIZE
 from ray.util.sgd.torch.torch_runner import TorchRunner
-from ray.util.sgd.torch.constants import VALID_SCHEDULER_STEP, NCCL_TIMEOUT_S
-from ray.util.sgd.torch.utils import setup_address
+from ray.util.sgd.torch.constants import VALID_SCHEDULER_STEP
 from ray.util.sgd.data import Dataset
 
 logger = logging.getLogger(__name__)
@@ -126,7 +124,6 @@ class TorchTrainer:
         num_workers (int): the number of workers used in distributed
             training. If 1, the worker will not be wrapped with
             DistributedDataParallel.
-        num_cpus_per_worker (int): Sets the cpu requirement for each worker.
         use_gpu (bool): Sets resource allocation for workers to 1 GPU
             if true, and automatically moves both the model and optimizer
             to the available CUDA device.
@@ -178,11 +175,9 @@ class TorchTrainer:
             initialization_hook=None,
             config=None,
             num_workers=1,
-            num_cpus_per_worker=1,
             use_gpu="auto",
             backend="auto",
             wrap_ddp=True,
-            timeout_s=NCCL_TIMEOUT_S,
             serialize_data_creation=True,
             use_fp16=False,
             use_tqdm=False,
@@ -245,13 +240,11 @@ class TorchTrainer:
 
         logger.debug("Using {} as backend.".format(backend))
         self.backend = backend
-        self.num_cpus_per_worker = num_cpus_per_worker
         self.use_gpu = use_gpu
         self.max_replicas = num_workers
 
         self.serialize_data_creation = serialize_data_creation
         self.wrap_ddp = wrap_ddp
-        self.timeout_s = timeout_s
         self.use_fp16 = use_fp16
         self.use_tqdm = use_tqdm
         self.add_dist_sampler = add_dist_sampler
@@ -335,14 +328,11 @@ class TorchTrainer:
 
             # Start local worker
             self.local_worker = LocalDistributedRunner(
-                num_cpus=self.num_cpus_per_worker,
-                num_gpus=int(self.use_gpu),
-                **params)
+                num_cpus=1, num_gpus=int(self.use_gpu), **params)
 
             # Generate actor class
             RemoteRunner = ray.remote(
-                num_cpus=self.num_cpus_per_worker,
-                num_gpus=int(self.use_gpu))(DistributedTorchRunner)
+                num_cpus=1, num_gpus=int(self.use_gpu))(DistributedTorchRunner)
             # Start workers
             self.remote_workers = [
                 RemoteRunner.remote(**params) for i in range(num_workers - 1)
@@ -351,7 +341,10 @@ class TorchTrainer:
                 self.apply_all_workers(self.initialization_hook)
 
             # Compute URL for initializing distributed PyTorch
-            address = setup_address()
+            ip = ray.services.get_node_ip_address()
+            port = self.local_worker.find_free_port()
+
+            address = "tcp://{ip}:{port}".format(ip=ip, port=port)
 
             # Runs the creator functions.
             remote_component_setup = [
@@ -364,12 +357,10 @@ class TorchTrainer:
 
             # Setup the process group among all workers.
             remote_pgroup_setups = [
-                worker.setup_process_group.remote(address, i + 1, num_workers,
-                                                  timedelta(self.timeout_s))
+                worker.setup_process_group.remote(address, i + 1, num_workers)
                 for i, worker in enumerate(self.remote_workers)
             ]
-            self.local_worker.setup_process_group(address, 0, num_workers,
-                                                  timedelta(self.timeout_s))
+            self.local_worker.setup_process_group(address, 0, num_workers)
             # Get setup tasks in order to throw errors on failure
             ray.get(remote_pgroup_setups)
 
@@ -745,14 +736,12 @@ class TorchTrainer:
             def default_resource_request(cls, config):
                 num_workers = config.get("num_workers",
                                          kwargs.get("num_workers", 1))
-                num_cpus = config.get("num_cpus_per_worker",
-                                      kwargs.get("num_cpus_per_worker", 1))
                 use_gpu = config.get("use_gpu", kwargs.get("use_gpu"))
 
                 remote_worker_count = num_workers - 1
 
                 return Resources(
-                    cpu=num_cpus,
+                    cpu=1,
                     gpu=int(use_gpu),
                     extra_cpu=int(remote_worker_count),
                     extra_gpu=int(int(use_gpu) * remote_worker_count))
@@ -788,7 +777,7 @@ class BaseTorchTrainable(Trainable):
         # TorchTrainable is subclass of BaseTorchTrainable.
 
         class CustomTrainable(TorchTrainable):
-            def step(self):
+            def _train(self):
                 for i in range(5):
                     train_stats = self.trainer.train()
                 validation_stats = self.trainer.validate()
@@ -802,11 +791,11 @@ class BaseTorchTrainable(Trainable):
 
     """
 
-    def setup(self, config):
+    def _setup(self, config):
         """Constructs a TorchTrainer object as `self.trainer`."""
         self._trainer = self._create_trainer(config)
 
-    def step(self):
+    def _train(self):
         """Calls `self.trainer.train()` and `self.trainer.validate()` once.
 
         You may want to override this if using a custom LR scheduler.
@@ -816,20 +805,20 @@ class BaseTorchTrainable(Trainable):
         stats = merge_dicts(train_stats, validation_stats)
         return stats
 
-    def save_checkpoint(self, checkpoint_dir):
+    def _save(self, checkpoint_dir):
         """Returns a path containing the trainer state."""
         checkpoint_path = os.path.join(checkpoint_dir, "trainer.checkpoint")
         self.trainer.save(checkpoint_path)
         return checkpoint_path
 
-    def load_checkpoint(self, checkpoint_path):
+    def _restore(self, checkpoint_path):
         """Restores the trainer state.
 
         Override this if you have state external to the Trainer object.
         """
         return self.trainer.load(checkpoint_path)
 
-    def cleanup(self):
+    def _stop(self):
         """Shuts down the trainer."""
         self.trainer.shutdown()
 

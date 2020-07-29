@@ -23,7 +23,6 @@ class NodeStats(threading.Thread):
             redis_address, password=redis_password)
 
         self._node_stats = {}
-        self._ip_to_hostname = {}
         self._addr_to_owner_addr = {}
         self._addr_to_actor_id = {}
         self._addr_to_extra_info_dict = {}
@@ -37,7 +36,7 @@ class NodeStats(threading.Thread):
             "jobId": "",
             "numExecutedTasks": 0,
             "numLocalObjects": 0,
-            "numObjectRefsInScope": 0,
+            "numObjectIdsInScope": 0,
             "port": 0,
             "state": 0,
             "taskQueueLength": 0,
@@ -56,17 +55,23 @@ class NodeStats(threading.Thread):
 
         super().__init__()
 
-    def _insert_log_counts(self):
-        for ip, logs_by_pid in self._logs.items():
-            hostname = self._ip_to_hostname[ip]
-            logs_by_pid = {pid: len(logs) for pid, logs in logs_by_pid.items()}
-            self._node_stats[hostname]["log_count"] = logs_by_pid
+    def _calculate_log_counts(self):
+        return {
+            ip: {
+                pid: len(logs_for_pid)
+                for pid, logs_for_pid in logs_for_ip.items()
+            }
+            for ip, logs_for_ip in self._logs.items()
+        }
 
-    def _insert_error_counts(self):
-        for ip, errs_by_pid in self._errors.items():
-            hostname = self._ip_to_hostname[ip]
-            errs_by_pid = {pid: len(errs) for pid, errs in errs_by_pid.items()}
-            self._node_stats[hostname]["error_count"] = errs_by_pid
+    def _calculate_error_counts(self):
+        return {
+            ip: {
+                pid: len(errors_for_pid)
+                for pid, errors_for_pid in errors_for_ip.items()
+            }
+            for ip, errors_for_ip in self._errors.items()
+        }
 
     def _purge_outdated_stats(self):
         def current(then, now):
@@ -84,12 +89,14 @@ class NodeStats(threading.Thread):
     def get_node_stats(self):
         with self._node_stats_lock:
             self._purge_outdated_stats()
-            self._insert_error_counts()
-            self._insert_log_counts()
             node_stats = sorted(
                 (v for v in self._node_stats.values()),
                 key=itemgetter("boot_time"))
-            return {"clients": node_stats}
+            return {
+                "clients": node_stats,
+                "log_counts": self._calculate_log_counts(),
+                "error_counts": self._calculate_error_counts(),
+            }
 
     def get_actor_tree(self, workers_info_by_node, infeasible_tasks,
                        ready_tasks):
@@ -202,7 +209,7 @@ class NodeStats(threading.Thread):
             try:
                 with self._node_stats_lock:
                     channel = ray.utils.decode(x["channel"])\
-                                if "pattern" not in x or x["pattern"] is None\
+                                if "pattern" not in x\
                                 else x["pattern"]
                     data = x["data"]
                     if channel == log_channel:
@@ -243,15 +250,9 @@ class NodeStats(threading.Thread):
                             "state": actor_data.state,
                             "timestamp": actor_data.timestamp
                         }
-                    elif channel == ray.gcs_utils.RAY_REPORTER_PUBSUB_PATTERN:
-                        data = json.loads(ray.utils.decode(data))
-                        self._ip_to_hostname[data["ip"]] = data["hostname"]
-                        self._node_stats[data["hostname"]] = data
                     else:
-                        logger.warning("Unexpected channel data received, "
-                                       "channel: {}, data: {}".format(
-                                           channel,
-                                           json.loads(ray.utils.decode(data))))
+                        data = json.loads(ray.utils.decode(data))
+                        self._node_stats[data["hostname"]] = data
 
             except Exception:
                 logger.exception(traceback.format_exc())

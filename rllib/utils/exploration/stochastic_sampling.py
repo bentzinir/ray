@@ -1,15 +1,16 @@
-import tree
 from typing import Union
 
 from ray.rllib.models.action_dist import ActionDistribution
 from ray.rllib.models.modelv2 import ModelV2
+from ray.rllib.utils import try_import_tree
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.exploration.exploration import Exploration
 from ray.rllib.utils.framework import try_import_tf, try_import_torch, \
     TensorType
 
-tf1, tf, tfv = try_import_tf()
+tf = try_import_tf()
 torch, _ = try_import_torch()
+tree = try_import_tree()
 
 
 class StochasticSampling(Exploration):
@@ -61,7 +62,9 @@ class StochasticSampling(Exploration):
         logp = tf.cond(
             tf.constant(explore) if isinstance(explore, bool) else explore,
             true_fn=lambda: action_dist.sampled_action_logp(),
-            false_fn=logp_false_fn)
+            false_fn=logp_false_fn,
+            # false_fn=lambda: tf.zeros_like(action_dist.sampled_action_logp()),
+        )
 
         return action, logp
 

@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ray/gcs/gcs_server/gcs_table_storage.h"
-
+#include "gcs_table_storage.h"
 #include "ray/common/id.h"
 #include "ray/common/status.h"
 #include "ray/gcs/callback.h"
@@ -113,7 +112,7 @@ template class GcsTable<ClientID, HeartbeatTableData>;
 template class GcsTable<ClientID, HeartbeatBatchTableData>;
 template class GcsTable<JobID, ErrorTableData>;
 template class GcsTable<UniqueID, ProfileTableData>;
-template class GcsTable<WorkerID, WorkerTableData>;
+template class GcsTable<WorkerID, WorkerFailureData>;
 template class GcsTable<ActorID, ActorTableData>;
 template class GcsTable<ActorCheckpointID, ActorCheckpointData>;
 template class GcsTable<ActorID, ActorCheckpointIdData>;
@@ -121,15 +120,12 @@ template class GcsTable<TaskID, TaskTableData>;
 template class GcsTable<TaskID, TaskLeaseData>;
 template class GcsTable<TaskID, TaskReconstructionData>;
 template class GcsTable<ObjectID, ObjectTableDataList>;
-template class GcsTable<UniqueID, StoredConfig>;
 template class GcsTableWithJobId<ActorID, ActorTableData>;
 template class GcsTableWithJobId<ActorID, ActorCheckpointIdData>;
 template class GcsTableWithJobId<TaskID, TaskTableData>;
 template class GcsTableWithJobId<TaskID, TaskLeaseData>;
 template class GcsTableWithJobId<TaskID, TaskReconstructionData>;
 template class GcsTableWithJobId<ObjectID, ObjectTableDataList>;
-template class GcsTable<PlacementGroupID, PlacementGroupTableData>;
-template class GcsTable<PlacementGroupID, ScheduleData>;
 
 }  // namespace gcs
 }  // namespace ray

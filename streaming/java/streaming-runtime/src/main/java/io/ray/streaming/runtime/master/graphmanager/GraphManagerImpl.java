@@ -30,7 +30,7 @@ public class GraphManagerImpl implements GraphManager {
     ExecutionGraph executionGraph = setupStructure(jobGraph);
 
     // set max parallelism
-    int maxParallelism = jobGraph.getJobVertices().stream()
+    int maxParallelism = jobGraph.getJobVertexList().stream()
         .map(JobVertex::getParallelism)
         .max(Integer::compareTo).get();
     executionGraph.setMaxParallelism(maxParallelism);
@@ -49,7 +49,7 @@ public class GraphManagerImpl implements GraphManager {
     // create vertex
     Map<Integer, ExecutionJobVertex> exeJobVertexMap = new LinkedHashMap<>();
     long buildTime = executionGraph.getBuildTime();
-    for (JobVertex jobVertex : jobGraph.getJobVertices()) {
+    for (JobVertex jobVertex : jobGraph.getJobVertexList()) {
       int jobVertexId = jobVertex.getVertexId();
       exeJobVertexMap.put(jobVertexId,
           new ExecutionJobVertex(
@@ -60,7 +60,7 @@ public class GraphManagerImpl implements GraphManager {
     }
 
     // connect vertex
-    jobGraph.getJobEdges().forEach(jobEdge -> {
+    jobGraph.getJobEdgeList().stream().forEach(jobEdge -> {
       ExecutionJobVertex source = exeJobVertexMap.get(jobEdge.getSrcVertexId());
       ExecutionJobVertex target = exeJobVertexMap.get(jobEdge.getTargetVertexId());
 
@@ -70,8 +70,8 @@ public class GraphManagerImpl implements GraphManager {
       source.getOutputEdges().add(executionJobEdge);
       target.getInputEdges().add(executionJobEdge);
 
-      source.getExecutionVertices().forEach(vertex -> {
-        target.getExecutionVertices().forEach(outputVertex -> {
+      source.getExecutionVertices().stream().forEach(vertex -> {
+        target.getExecutionVertices().stream().forEach(outputVertex -> {
           ExecutionEdge executionEdge = new ExecutionEdge(vertex, outputVertex, executionJobEdge);
           vertex.getOutputEdges().add(executionEdge);
           outputVertex.getInputEdges().add(executionEdge);

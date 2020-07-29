@@ -1,9 +1,4 @@
-import numpy as np
-import gym
-
-from ray.rllib.models.modelv2 import ModelV2
 from ray.rllib.utils.annotations import DeveloperAPI
-from ray.rllib.utils.types import TensorType, List, Union, ModelConfigDict
 
 
 @DeveloperAPI
@@ -16,7 +11,7 @@ class ActionDistribution:
     """
 
     @DeveloperAPI
-    def __init__(self, inputs: List[TensorType], model: ModelV2):
+    def __init__(self, inputs, model):
         """Initialize the action dist.
 
         Arguments:
@@ -30,12 +25,12 @@ class ActionDistribution:
         self.model = model
 
     @DeveloperAPI
-    def sample(self) -> TensorType:
+    def sample(self):
         """Draw a sample from the action distribution."""
         raise NotImplementedError
 
     @DeveloperAPI
-    def deterministic_sample(self) -> TensorType:
+    def deterministic_sample(self):
         """
         Get the deterministic "sampling" output from the distribution.
         This is usually the max likelihood output, i.e. mean for Normal, argmax
@@ -44,26 +39,26 @@ class ActionDistribution:
         raise NotImplementedError
 
     @DeveloperAPI
-    def sampled_action_logp(self) -> TensorType:
+    def sampled_action_logp(self):
         """Returns the log probability of the last sampled action."""
         raise NotImplementedError
 
     @DeveloperAPI
-    def logp(self, x: TensorType) -> TensorType:
+    def logp(self, x):
         """The log-likelihood of the action distribution."""
         raise NotImplementedError
 
     @DeveloperAPI
-    def kl(self, other: "ActionDistribution") -> TensorType:
+    def kl(self, other):
         """The KL-divergence between two action distributions."""
         raise NotImplementedError
 
     @DeveloperAPI
-    def entropy(self) -> TensorType:
+    def entropy(self):
         """The entropy of the action distribution."""
         raise NotImplementedError
 
-    def multi_kl(self, other: "ActionDistribution") -> TensorType:
+    def multi_kl(self, other):
         """The KL-divergence between two action distributions.
 
         This differs from kl() in that it can return an array for
@@ -71,7 +66,7 @@ class ActionDistribution:
         """
         return self.kl(other)
 
-    def multi_entropy(self) -> TensorType:
+    def multi_entropy(self):
         """The entropy of the action distribution.
 
         This differs from entropy() in that it can return an array for
@@ -81,9 +76,7 @@ class ActionDistribution:
 
     @DeveloperAPI
     @staticmethod
-    def required_model_output_shape(
-            action_space: gym.Space,
-            model_config: ModelConfigDict) -> Union[int, np.ndarray]:
+    def required_model_output_shape(action_space, model_config):
         """Returns the required shape of an input parameter tensor for a
         particular action space and an optional dict of distribution-specific
         options.

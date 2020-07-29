@@ -4,7 +4,6 @@ from ray.rllib.models.modelv2 import ModelV2
 from ray.rllib.models.torch.misc import SlimFC
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.policy.rnn_sequencing import add_time_dimension
-from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.utils.annotations import override, DeveloperAPI
 from ray.rllib.utils.framework import try_import_torch
 
@@ -19,12 +18,9 @@ class RecurrentNetwork(TorchModelV2):
     takes batches with the time dimension added already.
 
     Here is an example implementation for a subclass
-    ``MyRNNClass(RecurrentNetwork, nn.Module)``::
+    ``MyRNNClass(nn.Module, RecurrentNetwork)``::
 
         def __init__(self, obs_space, num_outputs):
-            nn.Module.__init__(self)
-            super().__init__(obs_space, action_space, num_outputs,
-                             model_config, name)
             self.obs_size = _get_size(obs_space)
             self.rnn_hidden_dim = model_config["lstm_cell_size"]
             self.fc1 = nn.Linear(self.obs_size, self.rnn_hidden_dim)
@@ -91,23 +87,17 @@ class RecurrentNetwork(TorchModelV2):
         raise NotImplementedError("You must implement this for an RNN model")
 
 
-class LSTMWrapper(RecurrentNetwork, nn.Module):
+class LSTMWrapper(RecurrentNetwork):
     """An LSTM wrapper serving as an interface for ModelV2s that set use_lstm.
     """
 
     def __init__(self, obs_space, action_space, num_outputs, model_config,
                  name):
 
-        nn.Module.__init__(self)
-        super().__init__(obs_space, action_space, None, model_config, name)
+        super(LSTMWrapper, self).__init__(obs_space, action_space, None,
+                                          model_config, name)
 
         self.cell_size = model_config["lstm_cell_size"]
-        self.use_prev_action_reward = model_config[
-            "lstm_use_prev_action_reward"]
-        self.action_dim = int(np.product(action_space.shape))
-        # Add prev-action/reward nodes to input to LSTM.
-        if self.use_prev_action_reward:
-            self.num_outputs += 1 + self.action_dim
         self.lstm = nn.LSTM(self.num_outputs, self.cell_size, batch_first=True)
 
         self.num_outputs = num_outputs
@@ -129,18 +119,6 @@ class LSTMWrapper(RecurrentNetwork, nn.Module):
         assert seq_lens is not None
         # Push obs through "unwrapped" net's `forward()` first.
         wrapped_out, _ = self._wrapped_forward(input_dict, [], None)
-
-        # Concat. prev-action/reward if required.
-        if self.model_config["lstm_use_prev_action_reward"]:
-            wrapped_out = torch.cat(
-                [
-                    wrapped_out,
-                    torch.reshape(input_dict[SampleBatch.PREV_ACTIONS].float(),
-                                  [-1, self.action_dim]),
-                    torch.reshape(input_dict[SampleBatch.PREV_REWARDS],
-                                  [-1, 1]),
-                ],
-                dim=1)
 
         # Then through our LSTM.
         input_dict["obs_flat"] = wrapped_out

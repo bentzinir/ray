@@ -145,7 +145,7 @@ class RayTrialExecutorTest(unittest.TestCase):
         """Tests that reset works as expected."""
 
         class B(Trainable):
-            def step(self):
+            def _train(self):
                 return dict(timesteps_this_iter=1, done=True)
 
             def reset_config(self, config):

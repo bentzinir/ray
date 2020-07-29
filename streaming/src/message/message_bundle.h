@@ -1,12 +1,11 @@
-#pragma once
+#ifndef RAY_MESSAGE_BUNDLE_H
+#define RAY_MESSAGE_BUNDLE_H
 
 #include <ctime>
 #include <list>
-#include <memory>
 #include <numeric>
-#include <string>
 
-#include "message/message.h"
+#include "message.h"
 
 namespace ray {
 namespace streaming {
@@ -179,3 +178,5 @@ class StreamingMessageBundle : public StreamingMessageBundleMeta {
 };
 }  // namespace streaming
 }  // namespace ray
+
+#endif  // RAY_MESSAGE_BUNDLE_H

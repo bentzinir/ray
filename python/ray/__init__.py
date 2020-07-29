@@ -1,7 +1,6 @@
 import os
 import logging
 from os.path import dirname
-import platform
 import sys
 
 logger = logging.getLogger(__name__)
@@ -39,11 +38,6 @@ if sys.platform == "win32":
     import ray.compat  # noqa: E402
     ray.compat.patch_redis_empty_recv()
 
-if (platform.system() == "Linux"
-        and "Microsoft".lower() in platform.release().lower()):
-    import ray.compat  # noqa: E402
-    ray.compat.patch_psutil()
-
 # Expose ray ABI symbols which may be dependent by other shared
 # libraries such as _streaming.so. See BUILD.bazel:_raylet
 python_shared_lib_suffix = ".so" if sys.platform != "win32" else ".pyd"
@@ -65,11 +59,9 @@ from ray._raylet import (
     WorkerID,
     FunctionID,
     ObjectID,
-    ObjectRef,
     TaskID,
     UniqueID,
     Language,
-    PlacementGroupID,
 )  # noqa: E402
 
 _config = _Config()
@@ -168,8 +160,6 @@ __all__ += [
     "WorkerID",
     "FunctionID",
     "ObjectID",
-    "ObjectRef",
     "TaskID",
     "UniqueID",
-    "PlacementGroupID",
 ]

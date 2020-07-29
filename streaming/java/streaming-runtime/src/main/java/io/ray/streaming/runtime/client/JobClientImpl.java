@@ -3,6 +3,7 @@ package io.ray.streaming.runtime.client;
 import io.ray.api.ActorHandle;
 import io.ray.api.ObjectRef;
 import io.ray.api.Ray;
+import io.ray.api.options.ActorCreationOptions;
 import io.ray.streaming.client.JobClient;
 import io.ray.streaming.jobgraph.JobGraph;
 import io.ray.streaming.runtime.config.global.CommonConfig;
@@ -26,6 +27,10 @@ public class JobClientImpl implements JobClient {
     LOG.info("Submitting job [{}] with job graph [{}] and job config [{}].",
         jobGraph.getJobName(), jobGraph, jobConfig);
     Map<String, Double> resources = new HashMap<>();
+    ActorCreationOptions options = new ActorCreationOptions.Builder()
+        .setResources(resources)
+        .setMaxRestarts(-1)
+        .createActorCreationOptions();
 
     // set job name and id at start
     jobConfig.put(CommonConfig.JOB_ID, Ray.getRuntimeContext().getCurrentJobId().toString());
@@ -34,14 +39,11 @@ public class JobClientImpl implements JobClient {
     jobGraph.getJobConfig().putAll(jobConfig);
 
     // create job master actor
-    this.jobMasterActor = Ray.actor(JobMaster::new, jobConfig)
-        .setResources(resources)
-        .setMaxRestarts(-1)
-        .remote();
+    this.jobMasterActor = Ray.createActor(JobMaster::new, jobConfig, options);
 
     try {
-      ObjectRef<Boolean> submitResult = jobMasterActor.task(JobMaster::submitJob,
-          jobMasterActor, jobGraph).remote();
+      ObjectRef<Boolean> submitResult = jobMasterActor.call(JobMaster::submitJob,
+          jobMasterActor, jobGraph);
 
       if (submitResult.get()) {
         LOG.info("Finish submitting job: {}.", jobGraph.getJobName());

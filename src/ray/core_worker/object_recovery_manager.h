@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_CORE_WORKER_OBJECT_RECOVERY_MANAGER_H
+#define RAY_CORE_WORKER_OBJECT_RECOVERY_MANAGER_H
 
 #include "absl/base/thread_annotations.h"
 #include "absl/synchronization/mutex.h"
@@ -20,7 +21,7 @@
 #include "ray/core_worker/reference_count.h"
 #include "ray/core_worker/store_provider/memory_store/memory_store.h"
 #include "ray/core_worker/task_manager.h"
-#include "ray/raylet_client/raylet_client.h"
+#include "ray/raylet/raylet_client.h"
 
 namespace ray {
 
@@ -46,12 +47,12 @@ class ObjectRecoveryManager {
                         std::function<void(const ObjectID &object_id, bool pin_object)>
                             reconstruction_failure_callback,
                         bool lineage_reconstruction_enabled)
-      : task_resubmitter_(task_resubmitter),
-        reference_counter_(reference_counter),
-        rpc_address_(rpc_address),
+      : rpc_address_(rpc_address),
         client_factory_(client_factory),
         local_object_pinning_client_(local_object_pinning_client),
         object_lookup_(object_lookup),
+        task_resubmitter_(task_resubmitter),
+        reference_counter_(reference_counter),
         in_memory_store_(in_memory_store),
         reconstruction_failure_callback_(reconstruction_failure_callback),
         lineage_reconstruction_enabled_(lineage_reconstruction_enabled) {}
@@ -146,3 +147,5 @@ class ObjectRecoveryManager {
 };
 
 }  // namespace ray
+
+#endif  // RAY_CORE_WORKER_OBJECT_RECOVERY_MANAGER_H

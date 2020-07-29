@@ -17,7 +17,6 @@
 
 #include "ray/object_manager/plasma/quota_aware_policy.h"
 #include "ray/object_manager/plasma/common.h"
-#include "ray/object_manager/plasma/connection.h"
 #include "ray/object_manager/plasma/plasma_allocator.h"
 
 #include <algorithm>
@@ -48,13 +47,13 @@ void QuotaAwarePolicy::ObjectCreated(const ObjectID& object_id, Client* client,
 
 bool QuotaAwarePolicy::SetClientQuota(Client* client, int64_t output_memory_quota) {
   if (per_client_cache_.find(client) != per_client_cache_.end()) {
-    RAY_LOG(WARNING) << "Cannot change the client quota once set";
+    ARROW_LOG(WARNING) << "Cannot change the client quota once set";
     return false;
   }
 
   if (cache_.Capacity() - output_memory_quota <
       cache_.OriginalCapacity() * kGlobalLruReserveFraction) {
-    RAY_LOG(WARNING) << "Not enough memory to set client quota: " << DebugString();
+    ARROW_LOG(WARNING) << "Not enough memory to set client quota: " << DebugString();
     return false;
   }
 
@@ -73,7 +72,7 @@ bool QuotaAwarePolicy::EnforcePerClientQuota(Client* client, int64_t size, bool 
 
   auto& client_cache = per_client_cache_[client];
   if (size > client_cache->Capacity()) {
-    RAY_LOG(WARNING) << "object too large (" << size
+    ARROW_LOG(WARNING) << "object too large (" << size
                        << " bytes) to fit in client quota " << client_cache->Capacity()
                        << " " << DebugString();
     return false;

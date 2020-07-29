@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_NODE_MANAGER_H
+#define RAY_GCS_NODE_MANAGER_H
 
+#include <ray/common/id.h>
+#include <ray/gcs/accessor.h>
+#include <ray/protobuf/gcs.pb.h>
+#include <ray/rpc/client_call.h>
+#include <ray/rpc/gcs_server/gcs_rpc_server.h>
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
-#include "ray/common/id.h"
-#include "ray/gcs/accessor.h"
-#include "ray/gcs/gcs_server/gcs_table_storage.h"
+#include "gcs_table_storage.h"
 #include "ray/gcs/pubsub/gcs_pub_sub.h"
-#include "ray/rpc/client_call.h"
-#include "ray/rpc/gcs_server/gcs_rpc_server.h"
-#include "src/ray/protobuf/gcs.pb.h"
 
 namespace ray {
 namespace gcs {
@@ -79,16 +80,6 @@ class GcsNodeManager : public rpc::NodeInfoHandler {
                              rpc::DeleteResourcesReply *reply,
                              rpc::SendReplyCallback send_reply_callback) override;
 
-  /// Handle setting internal config.
-  void HandleSetInternalConfig(const rpc::SetInternalConfigRequest &request,
-                               rpc::SetInternalConfigReply *reply,
-                               rpc::SendReplyCallback send_reply_callback) override;
-
-  /// Handle getting internal config.
-  void HandleGetInternalConfig(const rpc::GetInternalConfigRequest &request,
-                               rpc::GetInternalConfigReply *reply,
-                               rpc::SendReplyCallback send_reply_callback) override;
-
   /// Add an alive node.
   ///
   /// \param node The info of the node to be added.
@@ -140,9 +131,6 @@ class GcsNodeManager : public rpc::NodeInfoHandler {
   /// \param done Callback that will be called when load is complete.
   void LoadInitialData(const EmptyCallback &done);
 
-  /// Start node failure detector.
-  void StartNodeFailureDetector();
-
  protected:
   class NodeFailureDetector {
    public:
@@ -158,9 +146,6 @@ class GcsNodeManager : public rpc::NodeInfoHandler {
         std::shared_ptr<gcs::GcsTableStorage> gcs_table_storage,
         std::shared_ptr<gcs::GcsPubSub> gcs_pub_sub,
         std::function<void(const ClientID &)> on_node_death_callback);
-
-    /// Start failure detector.
-    void Start();
 
     /// Register node to this detector.
     /// Only if the node has registered, its heartbeat data will be accepted.
@@ -198,8 +183,6 @@ class GcsNodeManager : public rpc::NodeInfoHandler {
     std::function<void(const ClientID &)> on_node_death_callback_;
     /// The number of heartbeats that can be missed before a node is removed.
     int64_t num_heartbeats_timeout_;
-    // Only the changed part will be included in heartbeat if this is true.
-    const bool light_heartbeat_enabled_;
     /// A timer that ticks every heartbeat_timeout_ms_ milliseconds.
     boost::asio::deadline_timer detect_timer_;
     /// For each Raylet that we receive a heartbeat from, the number of ticks
@@ -209,8 +192,6 @@ class GcsNodeManager : public rpc::NodeInfoHandler {
     absl::flat_hash_map<ClientID, rpc::HeartbeatTableData> heartbeat_buffer_;
     /// A publisher for publishing gcs messages.
     std::shared_ptr<gcs::GcsPubSub> gcs_pub_sub_;
-    /// Is the detect started.
-    bool is_started_ = false;
   };
 
  private:
@@ -238,3 +219,5 @@ class GcsNodeManager : public rpc::NodeInfoHandler {
 
 }  // namespace gcs
 }  // namespace ray
+
+#endif  // RAY_GCS_NODE_MANAGER_H

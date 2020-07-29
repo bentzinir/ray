@@ -1,26 +1,25 @@
 import functools
 from math import log
 import numpy as np
-import tree
 
 from ray.rllib.models.action_dist import ActionDistribution
-from ray.rllib.models.modelv2 import ModelV2
+from ray.rllib.utils import try_import_tree
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.framework import try_import_torch
 from ray.rllib.utils.numpy import SMALL_NUMBER, MIN_LOG_NN_OUTPUT, \
     MAX_LOG_NN_OUTPUT
 from ray.rllib.utils.spaces.space_utils import get_base_struct_from_space
 from ray.rllib.utils.torch_ops import atanh
-from ray.rllib.utils.types import TensorType, List
 
 torch, nn = try_import_torch()
+tree = try_import_tree()
 
 
 class TorchDistributionWrapper(ActionDistribution):
     """Wrapper class for torch.distributions."""
 
     @override(ActionDistribution)
-    def __init__(self, inputs: List[TensorType], model: ModelV2):
+    def __init__(self, inputs, model):
         if not isinstance(inputs, torch.Tensor):
             inputs = torch.Tensor(inputs)
         super().__init__(inputs, model)
@@ -28,24 +27,24 @@ class TorchDistributionWrapper(ActionDistribution):
         self.last_sample = None
 
     @override(ActionDistribution)
-    def logp(self, actions: TensorType) -> TensorType:
+    def logp(self, actions):
         return self.dist.log_prob(actions)
 
     @override(ActionDistribution)
-    def entropy(self) -> TensorType:
+    def entropy(self):
         return self.dist.entropy()
 
     @override(ActionDistribution)
-    def kl(self, other: ActionDistribution) -> TensorType:
+    def kl(self, other):
         return torch.distributions.kl.kl_divergence(self.dist, other.dist)
 
     @override(ActionDistribution)
-    def sample(self) -> TensorType:
+    def sample(self):
         self.last_sample = self.dist.sample()
         return self.last_sample
 
     @override(ActionDistribution)
-    def sampled_action_logp(self) -> TensorType:
+    def sampled_action_logp(self):
         assert self.last_sample is not None
         return self.logp(self.last_sample)
 
@@ -310,7 +309,7 @@ class TorchDeterministic(TorchDistributionWrapper):
 
     @override(TorchDistributionWrapper)
     def sampled_action_logp(self):
-        return torch.zeros((self.inputs.size()[0], ), dtype=torch.float32)
+        return 0.0
 
     @override(TorchDistributionWrapper)
     def sample(self):

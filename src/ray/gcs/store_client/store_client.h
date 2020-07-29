@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_STORE_CLIENT_STORE_CLIENT_H
+#define RAY_GCS_STORE_CLIENT_STORE_CLIENT_H
 
 #include <memory>
 #include <string>
-
 #include "ray/common/id.h"
 #include "ray/common/status.h"
 #include "ray/gcs/callback.h"
+#include "ray/protobuf/gcs.pb.h"
 #include "ray/util/io_service_pool.h"
 #include "ray/util/logging.h"
-#include "src/ray/protobuf/gcs.pb.h"
 
 namespace ray {
 
@@ -120,3 +120,5 @@ class StoreClient {
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_STORE_CLIENT_STORE_CLIENT_H

@@ -6,7 +6,7 @@ import ray
 from ray import serve
 
 if os.environ.get("RAY_SERVE_INTENTIONALLY_CRASH", False):
-    serve.controller._CRASH_AFTER_CHECKPOINT_PROBABILITY = 0.5
+    serve.master._CRASH_AFTER_CHECKPOINT_PROBABILITY = 0.5
 
 
 @pytest.fixture(scope="session")
@@ -20,11 +20,9 @@ def _shared_serve_instance():
 def serve_instance(_shared_serve_instance):
     serve.init()
     yield
-    # Re-init if necessary.
-    serve.init()
-    controller = serve.api._get_controller()
+    master = serve.api._get_master_actor()
     # Clear all state between tests to avoid naming collisions.
-    for endpoint in ray.get(controller.get_all_endpoints.remote()):
+    for endpoint in ray.get(master.get_all_endpoints.remote()):
         serve.delete_endpoint(endpoint)
-    for backend in ray.get(controller.get_all_backends.remote()):
+    for backend in ray.get(master.get_all_backends.remote()):
         serve.delete_backend(backend)

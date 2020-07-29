@@ -21,8 +21,6 @@ class ActorContext {
 
 class TaskExecutor {
  public:
-  TaskExecutor(AbstractRayRuntime &abstract_ray_tuntime_);
-
   /// TODO(Guyang Song): support multiple tasks execution
   std::unique_ptr<ObjectID> Execute(const InvocationSpec &invocation);
 
@@ -31,9 +29,6 @@ class TaskExecutor {
                      AbstractRayRuntime *runtime);
 
   virtual ~TaskExecutor(){};
-
- private:
-  AbstractRayRuntime &abstract_ray_tuntime_;
 };
 }  // namespace api
 }  // namespace ray

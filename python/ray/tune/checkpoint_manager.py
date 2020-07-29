@@ -109,10 +109,6 @@ class CheckpointManager:
             return
 
         old_checkpoint = self.newest_persistent_checkpoint
-
-        if old_checkpoint.value == checkpoint.value:
-            return
-
         self.newest_persistent_checkpoint = checkpoint
 
         # Remove the old checkpoint if it isn't one of the best ones.

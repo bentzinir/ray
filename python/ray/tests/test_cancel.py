@@ -1,20 +1,16 @@
+import pytest
+import ray
 import random
 import sys
 import time
-
-import pytest
-
-import ray
-from ray.exceptions import RayCancellationError, RayTaskError, \
-                           RayTimeoutError, RayWorkerError, \
-                           UnreconstructableError
+from ray.exceptions import RayTaskError, RayTimeoutError, \
+                            RayCancellationError, RayWorkerError
 from ray.test_utils import SignalActor
 
 
 def valid_exceptions(use_force):
     if use_force:
-        return (RayTaskError, RayCancellationError, RayWorkerError,
-                UnreconstructableError)
+        return (RayTaskError, RayCancellationError, RayWorkerError)
     else:
         return (RayTaskError, RayCancellationError)
 
@@ -158,9 +154,7 @@ def test_comprehensive(ray_start_regular, use_force):
         ray.get(combo)
 
 
-# Running this test with use_force==False is flaky.
-# TODO(ilr): Look into the root of this flakiness.
-@pytest.mark.parametrize("use_force", [True])
+@pytest.mark.parametrize("use_force", [True, False])
 def test_stress(shutdown_only, use_force):
     ray.init(num_cpus=1)
 
@@ -186,7 +180,9 @@ def test_stress(shutdown_only, use_force):
     for done in cancelled:
         with pytest.raises(valid_exceptions(use_force)):
             ray.get(done)
-    for indx, t in enumerate(tasks):
+
+    for indx in range(len(tasks)):
+        t = tasks[indx]
         if sleep_or_no[indx]:
             ray.cancel(t, use_force)
             cancelled.add(t)
@@ -225,9 +221,9 @@ def test_fast(shutdown_only, use_force):
         if random.random() > 0.95:
             ray.cancel(ids[idx], use_force)
     signaler.send.remote()
-    for obj_ref in ids:
+    for obj_id in ids:
         try:
-            ray.get(obj_ref)
+            ray.get(obj_id)
         except Exception as e:
             assert isinstance(e, valid_exceptions(use_force))
 

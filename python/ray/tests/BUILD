@@ -1,8 +1,8 @@
 SRCS = [] + select({
-    "@bazel_tools//src/conditions:windows": glob([
+    "@bazel_tools//src/conditions:windows": [
         # TODO(mehrdadn): This should be added for all platforms once resulting errors are fixed
-        "**/conftest.py",
-    ]),
+        "conftest.py",
+    ],
     "//conditions:default": [],
 })
 
@@ -194,7 +194,7 @@ py_test(
 py_test(
     name = "test_autoscaler_aws",
     size = "small",
-    srcs = SRCS + ["aws/test_autoscaler_aws.py"],
+    srcs = ["aws/test_autoscaler_aws.py"],
     deps = ["//:ray_lib"],
 )
 
@@ -202,7 +202,6 @@ py_test(
     name = "test_autoscaler_yaml",
     size = "small",
     srcs = SRCS + ["test_autoscaler_yaml.py"],
-    data = ["additional_property.yaml"],
     deps = ["//:ray_lib"],
 )
 
@@ -327,14 +326,6 @@ py_test(
     name = "test_multiprocessing",
     size = "medium",
     srcs = SRCS + ["test_multiprocessing.py"],
-    tags = ["exclusive"],
-    deps = ["//:ray_lib"],
-)
-
-py_test(
-    name = "test_job",
-    size = "small",
-    srcs = SRCS + ["test_job.py"],
     tags = ["exclusive"],
     deps = ["//:ray_lib"],
 )
@@ -468,30 +459,7 @@ py_test(
     name = "test_gcs_fault_tolerance",
     size = "medium",
     srcs = SRCS + ["test_gcs_fault_tolerance.py"],
-    tags = ["exclusive"],
-    deps = ["//:ray_lib"],
-)
-
-py_test(
-    name = "test_output",
-    size = "medium",
-    srcs = SRCS + ["test_output.py"],
-    tags = ["exclusive"],
-    deps = ["//:ray_lib"],
-)
-
-py_test(
-    name = "test_async",
-    size = "medium",
-    srcs = SRCS + ["test_async.py"],
-    tags = ["exclusive"],
-    deps = ["//:ray_lib"],
-)
-
-py_test(
-    name = "test_placement_group",
-    size = "medium",
-    srcs = SRCS + ["test_placement_group.py"],
-    tags = ["exclusive"],
+    # TODO(swang): Enable again once pubsub client supports GCS server restart.
+    tags = ["exclusive", "manual"],
     deps = ["//:ray_lib"],
 )

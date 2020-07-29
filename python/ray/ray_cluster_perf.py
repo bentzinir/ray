@@ -18,23 +18,23 @@ def main():
     cluster.add_node(
         object_store_memory=20 * 1024 * 1024 * 1024, num_gpus=1, num_cpus=16)
 
-    object_ref_list = []
+    object_id_list = []
     for i in range(0, 10):
-        object_ref = ray.put(np.random.rand(1024 * 128, 1024))
-        object_ref_list.append(object_ref)
+        object_id = ray.put(np.random.rand(1024 * 128, 1024))
+        object_id_list.append(object_id)
 
     @ray.remote(num_gpus=1)
-    def f(object_ref_list):
+    def f(object_id_list):
         diffs = []
-        for object_ref in object_ref_list:
+        for object_id in object_id_list:
             before = time.time()
-            ray.get(object_ref)
+            ray.get(object_id)
             after = time.time()
             diffs.append(after - before)
             time.sleep(1)
         return np.mean(diffs), np.std(diffs)
 
-    time_diff, time_diff_std = ray.get(f.remote(object_ref_list))
+    time_diff, time_diff_std = ray.get(f.remote(object_id_list))
 
     print("latency to get an 1G object over network", round(time_diff, 2),
           "+-", round(time_diff_std, 2))

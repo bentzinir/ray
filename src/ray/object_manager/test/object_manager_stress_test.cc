@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <unistd.h>
+
 #include <chrono>
 #include <iostream>
 #include <random>
@@ -22,10 +24,6 @@
 #include "ray/common/test_util.h"
 #include "ray/object_manager/object_manager.h"
 #include "ray/util/filesystem.h"
-
-extern "C" {
-#include "hiredis/hiredis.h"
-}
 
 namespace ray {
 
@@ -82,6 +80,12 @@ class MockServer {
 
 class TestObjectManagerBase : public ::testing::Test {
  public:
+  TestObjectManagerBase() {
+#ifdef _WIN32
+    RAY_CHECK(false) << "port system() calls to Windows before running this test";
+#endif
+  }
+
   void SetUp() {
     flushall_redis();
 
@@ -120,13 +124,13 @@ class TestObjectManagerBase : public ::testing::Test {
     server2.reset(new MockServer(main_service, om_config_2, gcs_client_2));
 
     // connect to stores.
-    RAY_CHECK_OK(client1.Connect(socket_name_1));
-    RAY_CHECK_OK(client2.Connect(socket_name_2));
+    RAY_ARROW_CHECK_OK(client1.Connect(socket_name_1));
+    RAY_ARROW_CHECK_OK(client2.Connect(socket_name_2));
   }
 
   void TearDown() {
-    Status client1_status = client1.Disconnect();
-    Status client2_status = client2.Disconnect();
+    arrow::Status client1_status = client1.Disconnect();
+    arrow::Status client2_status = client2.Disconnect();
     ASSERT_TRUE(client1_status.ok() && client2_status.ok());
 
     gcs_client_1->Disconnect();
@@ -145,8 +149,9 @@ class TestObjectManagerBase : public ::testing::Test {
     uint8_t metadata[] = {5};
     int64_t metadata_size = sizeof(metadata);
     std::shared_ptr<arrow::Buffer> data;
-    RAY_CHECK_OK(client.Create(object_id, data_size, metadata, metadata_size, &data));
-    RAY_CHECK_OK(client.Seal(object_id));
+    RAY_ARROW_CHECK_OK(
+        client.Create(object_id, data_size, metadata, metadata_size, &data));
+    RAY_ARROW_CHECK_OK(client.Seal(object_id));
     return object_id;
   }
 
@@ -265,8 +270,16 @@ class StressTestObjectManager : public TestObjectManagerBase {
 
   plasma::ObjectBuffer GetObject(plasma::PlasmaClient &client, ObjectID &object_id) {
     plasma::ObjectBuffer object_buffer;
-    RAY_CHECK_OK(client.Get(&object_id, 1, 0, &object_buffer));
+    plasma::ObjectID plasma_id = object_id;
+    RAY_ARROW_CHECK_OK(client.Get(&plasma_id, 1, 0, &object_buffer));
     return object_buffer;
+  }
+
+  static unsigned char *GetDigest(plasma::PlasmaClient &client, ObjectID &object_id) {
+    const int64_t size = sizeof(uint64_t);
+    static unsigned char digest_1[size];
+    RAY_ARROW_CHECK_OK(client.Hash(object_id, &digest_1[0]));
+    return digest_1;
   }
 
   void CompareObjects(ObjectID &object_id_1, ObjectID &object_id_2) {
@@ -280,6 +293,15 @@ class StressTestObjectManager : public TestObjectManagerBase {
     RAY_LOG(DEBUG) << "total_size " << total_size;
     for (int i = -1; ++i < total_size;) {
       ASSERT_TRUE(data_1[i] == data_2[i]);
+    }
+  }
+
+  void CompareHashes(ObjectID &object_id_1, ObjectID &object_id_2) {
+    const int64_t size = sizeof(uint64_t);
+    static unsigned char *digest_1 = GetDigest(client1, object_id_1);
+    static unsigned char *digest_2 = GetDigest(client2, object_id_2);
+    for (int i = -1; ++i < size;) {
+      ASSERT_TRUE(digest_1[i] == digest_2[i]);
     }
   }
 
@@ -298,6 +320,7 @@ class StressTestObjectManager : public TestObjectManagerBase {
       ObjectID object_id_2 = v2[i];
       ObjectID object_id_1 =
           v1[std::distance(v1.begin(), std::find(v1.begin(), v1.end(), v2[i]))];
+      CompareHashes(object_id_1, object_id_2);
       CompareObjects(object_id_1, object_id_2);
     }
 

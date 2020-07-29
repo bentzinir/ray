@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_UTIL_MEMORY_H
+#define RAY_UTIL_MEMORY_H
 
 #include <stdint.h>
 
@@ -24,3 +25,5 @@ void parallel_memcopy(uint8_t *dst, const uint8_t *src, int64_t nbytes,
                       uintptr_t block_size, int num_threads);
 
 }  // namespace ray
+
+#endif  // RAY_UTIL_MEMORY_H

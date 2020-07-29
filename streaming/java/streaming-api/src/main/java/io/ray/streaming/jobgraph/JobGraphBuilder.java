@@ -2,7 +2,6 @@ package io.ray.streaming.jobgraph;
 
 import com.google.common.base.Preconditions;
 import io.ray.streaming.api.stream.DataStream;
-import io.ray.streaming.api.stream.JoinStream;
 import io.ray.streaming.api.stream.Stream;
 import io.ray.streaming.api.stream.StreamSink;
 import io.ray.streaming.api.stream.StreamSource;
@@ -27,7 +26,7 @@ public class JobGraphBuilder {
   private List<StreamSink> streamSinkList;
 
   public JobGraphBuilder(List<StreamSink> streamSinkList) {
-    this(streamSinkList, "job_" + System.currentTimeMillis());
+    this(streamSinkList, "job-" + System.currentTimeMillis());
   }
 
   public JobGraphBuilder(List<StreamSink> streamSinkList, String jobName) {
@@ -62,20 +61,18 @@ public class JobGraphBuilder {
         "Reference stream should be skipped.");
     int vertexId = stream.getId();
     int parallelism = stream.getParallelism();
-    Map<String, String> config = stream.getConfig();
     JobVertex jobVertex;
     if (stream instanceof StreamSink) {
-      jobVertex = new JobVertex(vertexId, parallelism, VertexType.SINK, streamOperator, config);
+      jobVertex = new JobVertex(vertexId, parallelism, VertexType.SINK, streamOperator);
       Stream parentStream = stream.getInputStream();
       int inputVertexId = parentStream.getId();
       JobEdge jobEdge = new JobEdge(inputVertexId, vertexId, parentStream.getPartition());
       this.jobGraph.addEdge(jobEdge);
       processStream(parentStream);
     } else if (stream instanceof StreamSource) {
-      jobVertex = new JobVertex(vertexId, parallelism, VertexType.SOURCE, streamOperator, config);
+      jobVertex = new JobVertex(vertexId, parallelism, VertexType.SOURCE, streamOperator);
     } else if (stream instanceof DataStream || stream instanceof PythonDataStream) {
-      jobVertex = new JobVertex(
-          vertexId, parallelism, VertexType.TRANSFORMATION, streamOperator, config);
+      jobVertex = new JobVertex(vertexId, parallelism, VertexType.TRANSFORMATION, streamOperator);
       Stream parentStream = stream.getInputStream();
       int inputVertexId = parentStream.getId();
       JobEdge jobEdge = new JobEdge(inputVertexId, vertexId, parentStream.getPartition());
@@ -95,17 +92,10 @@ public class JobGraphBuilder {
         this.jobGraph.addEdge(otherEdge);
         processStream(otherStream);
       }
-
-      // process join stream
-      if (stream instanceof JoinStream) {
-        DataStream rightStream =  ((JoinStream) stream).getRightStream();
-        this.jobGraph.addEdge(
-            new JobEdge(rightStream.getId(), vertexId, rightStream.getPartition()));
-        processStream(rightStream);
-      }
     } else {
       throw new UnsupportedOperationException("Unsupported stream: " + stream);
     }
+    jobVertex.setConfig(stream.getConfig());
     this.jobGraph.addVertex(jobVertex);
   }
 

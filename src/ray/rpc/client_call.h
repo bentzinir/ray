@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_RPC_CLIENT_CALL_H
+#define RAY_RPC_CLIENT_CALL_H
 
 #include <grpcpp/grpcpp.h>
 #include <boost/asio.hpp>
@@ -280,3 +281,5 @@ class ClientCallManager {
 
 }  // namespace rpc
 }  // namespace ray
+
+#endif

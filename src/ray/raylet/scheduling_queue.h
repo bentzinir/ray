@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_RAYLET_SCHEDULING_QUEUE_H
+#define RAY_RAYLET_SCHEDULING_QUEUE_H
 
 #include <array>
 #include <list>
@@ -365,3 +366,5 @@ class SchedulingQueue {
 }  // namespace raylet
 
 }  // namespace ray
+
+#endif  // RAY_RAYLET_SCHEDULING_QUEUE_H

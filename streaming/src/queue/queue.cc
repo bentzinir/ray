@@ -1,9 +1,7 @@
-#include "queue/queue.h"
-
+#include "queue.h"
 #include <chrono>
 #include <thread>
-
-#include "queue/queue_handler.h"
+#include "queue_handler.h"
 #include "util/streaming_util.h"
 
 namespace ray {

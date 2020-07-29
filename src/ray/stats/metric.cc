@@ -14,9 +14,6 @@
 
 #include "ray/stats/metric.h"
 
-#include "opencensus/stats/internal/aggregation_window.h"
-#include "opencensus/stats/internal/set_aggregation_window.h"
-
 namespace ray {
 
 namespace stats {
@@ -32,6 +29,7 @@ static void RegisterAsView(opencensus::stats::ViewDescriptor view_descriptor,
   for (const auto &key : keys) {
     view_descriptor = view_descriptor.add_column(key);
   }
+
   opencensus::stats::View view(view_descriptor);
   view_descriptor.RegisterForExport();
 }
@@ -53,24 +51,6 @@ void StatsConfig::SetIsDisableStats(bool disable_stats) {
 
 bool StatsConfig::IsStatsDisabled() const { return is_stats_disabled_; }
 
-void StatsConfig::SetReportInterval(const absl::Duration interval) {
-  report_interval_ = interval;
-}
-
-const absl::Duration &StatsConfig::GetReportInterval() const { return report_interval_; }
-
-void StatsConfig::SetHarvestInterval(const absl::Duration interval) {
-  harvest_interval_ = interval;
-}
-
-const absl::Duration &StatsConfig::GetHarvestInterval() const {
-  return harvest_interval_;
-}
-
-void StatsConfig::SetIsInitialized(bool initialized) { is_initialized_ = initialized; }
-
-bool StatsConfig::IsInitialized() const { return is_initialized_; }
-
 void Metric::Record(double value, const TagsType &tags) {
   if (StatsConfig::instance().IsStatsDisabled()) {
     return;
@@ -88,16 +68,6 @@ void Metric::Record(double value, const TagsType &tags) {
                        std::begin(StatsConfig::instance().GetGlobalTags()),
                        std::end(StatsConfig::instance().GetGlobalTags()));
   opencensus::stats::Record({{*measure_, value}}, combined_tags);
-}
-
-void Metric::Record(double value, std::unordered_map<std::string, std::string> &tags) {
-  TagsType tags_pair_vec;
-  std::for_each(
-      tags.begin(), tags.end(),
-      [&tags_pair_vec](std::pair<std::string, std::string> tag) {
-        return tags_pair_vec.push_back({TagKeyType::Register(tag.first), tag.second});
-      });
-  Record(value, tags_pair_vec);
 }
 
 void Gauge::RegisterView() {

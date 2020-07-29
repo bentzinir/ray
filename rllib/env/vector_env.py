@@ -1,11 +1,7 @@
 import logging
-import gym
 import numpy as np
-from typing import Callable, List, Tuple
 
 from ray.rllib.utils.annotations import override, PublicAPI
-from ray.rllib.utils.types import EnvType, EnvConfigDict, EnvObsType, \
-    EnvInfoDict, EnvActionType
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +11,7 @@ class VectorEnv:
     """An environment that supports batch evaluation using clones of sub-envs.
     """
 
-    def __init__(self, observation_space: gym.Space, action_space: gym.Space,
-                 num_envs: int):
+    def __init__(self, observation_space, action_space, num_envs):
         """Initializes a VectorEnv object.
 
         Args:
@@ -30,12 +25,12 @@ class VectorEnv:
         self.num_envs = num_envs
 
     @staticmethod
-    def wrap(make_env: Callable[[int], EnvType] = None,
-             existing_envs: List[gym.Env] = None,
-             num_envs: int = 1,
-             action_space: gym.Space = None,
-             observation_space: gym.Space = None,
-             env_config: EnvConfigDict = None):
+    def wrap(make_env=None,
+             existing_envs=None,
+             num_envs=1,
+             action_space=None,
+             observation_space=None,
+             env_config=None):
         return _VectorizedGymEnv(
             make_env=make_env,
             existing_envs=existing_envs or [],
@@ -45,7 +40,7 @@ class VectorEnv:
             env_config=env_config)
 
     @PublicAPI
-    def vector_reset(self) -> List[EnvObsType]:
+    def vector_reset(self):
         """Resets all sub-environments.
 
         Returns:
@@ -54,7 +49,7 @@ class VectorEnv:
         raise NotImplementedError
 
     @PublicAPI
-    def reset_at(self, index: int) -> EnvObsType:
+    def reset_at(self, index):
         """Resets a single environment.
 
         Returns:
@@ -63,9 +58,7 @@ class VectorEnv:
         raise NotImplementedError
 
     @PublicAPI
-    def vector_step(
-            self, actions: List[EnvActionType]
-    ) -> Tuple[List[EnvObsType], List[float], List[bool], List[EnvInfoDict]]:
+    def vector_step(self, actions):
         """Performs a vectorized step on all sub environments using `actions`.
 
         Arguments:
@@ -80,7 +73,7 @@ class VectorEnv:
         raise NotImplementedError
 
     @PublicAPI
-    def get_unwrapped(self) -> List[EnvType]:
+    def get_unwrapped(self):
         """Returns the underlying sub environments.
 
         Returns:

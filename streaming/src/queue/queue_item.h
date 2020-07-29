@@ -1,13 +1,14 @@
-#pragma once
-
+#ifndef _STREAMING_QUEUE_ITEM_H_
+#define _STREAMING_QUEUE_ITEM_H_
 #include <iterator>
 #include <list>
 #include <thread>
 #include <vector>
 
-#include "message/message_bundle.h"
-#include "queue/message.h"
 #include "ray/common/id.h"
+
+#include "message.h"
+#include "message/message_bundle.h"
 #include "util/streaming_logging.h"
 
 namespace ray {
@@ -105,3 +106,4 @@ typedef std::shared_ptr<QueueItem> QueueItemPtr;
 
 }  // namespace streaming
 }  // namespace ray
+#endif

@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_STATS_TAG_DEFS_H
+#define RAY_STATS_TAG_DEFS_H
 
 /// The definitions of tag keys that you can use every where.
 /// You can follow these examples to define and register your tag keys.
@@ -38,4 +39,4 @@ static const TagKeyType ResourceNameKey = TagKeyType::Register("ResourceName");
 
 static const TagKeyType ValueTypeKey = TagKeyType::Register("ValueType");
 
-static const TagKeyType ActorIdKey = TagKeyType::Register("ActorId");
+#endif  // RAY_STATS_TAG_DEFS_H

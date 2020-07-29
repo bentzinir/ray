@@ -14,25 +14,14 @@
 
 #include "ray/object_manager/plasma/fling.h"
 
-#ifdef _WIN32
-#error "This file does not supposed to be compiled under windows."
-#endif
-
-#include <errno.h>
 #include <string.h>
 
-#include "ray/util/logging.h"
+#include "arrow/util/logging.h"
 
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/un.h>
-#include <unistd.h>
-
-// This is necessary for Mac OS X, see http://www.apuebook.com/faqs2e.html
-// (10).
-#if !defined(CMSG_SPACE) && !defined(CMSG_LEN)
-#define CMSG_SPACE(len) (__DARWIN_ALIGN32(sizeof(struct cmsghdr)) + __DARWIN_ALIGN32(len))
-#define CMSG_LEN(len) (__DARWIN_ALIGN32(sizeof(struct cmsghdr)) + (len))
+#ifdef _WIN32
+#include <ws2tcpip.h>  // socklen_t
+#else
+typedef int SOCKET;
 #endif
 
 void init_msg(struct msghdr* msg, struct iovec* iov, char* buf, size_t buf_len) {
@@ -51,7 +40,12 @@ void init_msg(struct msghdr* msg, struct iovec* iov, char* buf, size_t buf_len) 
 int send_fd(int conn, int fd) {
   struct msghdr msg;
   struct iovec iov;
-  char buf[CMSG_SPACE(sizeof(fd))];
+#ifdef _WIN32
+  SOCKET to_send = fh_get(fd);
+#else
+  SOCKET to_send = fd;
+#endif
+  char buf[CMSG_SPACE(sizeof(to_send))];
   memset(&buf, 0, sizeof(buf));
 
   init_msg(&msg, &iov, buf, sizeof(buf));
@@ -62,17 +56,22 @@ int send_fd(int conn, int fd) {
   }
   header->cmsg_level = SOL_SOCKET;
   header->cmsg_type = SCM_RIGHTS;
-  header->cmsg_len = CMSG_LEN(sizeof(fd));
-  memcpy(CMSG_DATA(header), reinterpret_cast<void*>(&fd), sizeof(fd));
+  header->cmsg_len = CMSG_LEN(sizeof(to_send));
+  memcpy(CMSG_DATA(header), reinterpret_cast<void*>(&to_send), sizeof(to_send));
 
+#ifdef _WIN32
+  SOCKET sock = fh_get(conn);
+#else
+  SOCKET sock = conn;
+#endif
   // Send file descriptor.
   while (true) {
-    ssize_t r = sendmsg(conn, &msg, 0);
+    ssize_t r = sendmsg(sock, &msg, 0);
     if (r < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
         continue;
       } else if (errno == EMSGSIZE) {
-        RAY_LOG(WARNING) << "Failed to send file descriptor"
+        ARROW_LOG(WARNING) << "Failed to send file descriptor"
                            << " (errno = EMSGSIZE), retrying.";
         // If we failed to send the file descriptor, loop until we have sent it
         // successfully. TODO(rkn): This is problematic for two reasons. First
@@ -82,14 +81,14 @@ int send_fd(int conn, int fd) {
         // plasma store event loop which should never happen.
         continue;
       } else {
-        RAY_LOG(INFO) << "Error in send_fd (errno = " << errno << ")";
+        ARROW_LOG(INFO) << "Error in send_fd (errno = " << errno << ")";
         return static_cast<int>(r);
       }
     } else if (r == 0) {
-      RAY_LOG(INFO) << "Encountered unexpected EOF";
+      ARROW_LOG(INFO) << "Encountered unexpected EOF";
       return 0;
     } else {
-      RAY_CHECK(r > 0);
+      ARROW_CHECK(r > 0);
       return static_cast<int>(r);
     }
   }
@@ -98,16 +97,21 @@ int send_fd(int conn, int fd) {
 int recv_fd(int conn) {
   struct msghdr msg;
   struct iovec iov;
-  char buf[CMSG_SPACE(sizeof(int))];
+  char buf[CMSG_SPACE(sizeof(SOCKET))];
   init_msg(&msg, &iov, buf, sizeof(buf));
 
+#ifdef _WIN32
+  SOCKET sock = fh_get(conn);
+#else
+  int sock = conn;
+#endif
   while (true) {
-    ssize_t r = recvmsg(conn, &msg, 0);
+    ssize_t r = recvmsg(sock, &msg, 0);
     if (r == -1) {
       if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
         continue;
       } else {
-        RAY_LOG(INFO) << "Error in recv_fd (errno = " << errno << ")";
+        ARROW_LOG(INFO) << "Error in recv_fd (errno = " << errno << ")";
         return -1;
       }
     } else {
@@ -115,20 +119,24 @@ int recv_fd(int conn) {
     }
   }
 
-  int found_fd = -1;
+  SOCKET found_fd = -1;
   int oh_noes = 0;
   for (struct cmsghdr* header = CMSG_FIRSTHDR(&msg); header != NULL;
        header = CMSG_NXTHDR(&msg, header))
     if (header->cmsg_level == SOL_SOCKET && header->cmsg_type == SCM_RIGHTS) {
       ssize_t count = (header->cmsg_len -
                        (CMSG_DATA(header) - reinterpret_cast<unsigned char*>(header))) /
-                      sizeof(int);
+                      sizeof(SOCKET);
       for (int i = 0; i < count; ++i) {
-        int fd = (reinterpret_cast<int*>(CMSG_DATA(header)))[i];
+        SOCKET fd = (reinterpret_cast<SOCKET*>(CMSG_DATA(header)))[i];
         if (found_fd == -1) {
           found_fd = fd;
         } else {
+#ifdef _WIN32
+          closesocket(fd) == 0 || ((WSAGetLastError() == WSAENOTSOCK || WSAGetLastError() == WSANOTINITIALISED) && CloseHandle(reinterpret_cast<HANDLE>(fd)));
+#else
           close(fd);
+#endif
           oh_noes = 1;
         }
       }
@@ -138,9 +146,19 @@ int recv_fd(int conn) {
   // them all to prevent fd leaks but notify the caller that we got
   // a bad message.
   if (oh_noes) {
+#ifdef _WIN32
+    closesocket(found_fd) == 0 || ((WSAGetLastError() == WSAENOTSOCK || WSAGetLastError() == WSANOTINITIALISED) && CloseHandle(reinterpret_cast<HANDLE>(found_fd)));
+#else
     close(found_fd);
+#endif
     errno = EBADMSG;
     return -1;
   }
-  return found_fd;
+
+#ifdef _WIN32
+  int to_receive = fh_open(found_fd, -1);
+#else
+  int to_receive = found_fd;
+#endif
+  return to_receive;
 }

@@ -186,4 +186,4 @@ Cluster file format (cluster.yaml)
 ----------------------------------
 
 This is the same as for the autoscaler, see
-:ref:`Cluster Launch page <ref-automatic-cluster>`.
+`Cluster Launch page <autoscaling.html>`_.

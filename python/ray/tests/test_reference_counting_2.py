@@ -23,7 +23,6 @@ def one_worker_100MiB(request):
     config = json.dumps({
         "object_store_full_max_retries": 2,
         "task_retry_delay_ms": 0,
-        "initial_reconstruction_timeout_milliseconds": 1000,
     })
     yield ray.init(
         num_cpus=1,
@@ -32,24 +31,22 @@ def one_worker_100MiB(request):
     ray.shutdown()
 
 
-def _fill_object_store_and_get(obj, succeed=True, object_MiB=40,
+def _fill_object_store_and_get(oid, succeed=True, object_MiB=40,
                                num_objects=5):
     for _ in range(num_objects):
         ray.put(np.zeros(object_MiB * 1024 * 1024, dtype=np.uint8))
 
-    if type(obj) is bytes:
-        obj = ray.ObjectRef(obj)
+    if type(oid) is bytes:
+        oid = ray.ObjectID(oid)
 
     if succeed:
-        wait_for_condition(
-            lambda: ray.worker.global_worker.core_worker.object_exists(obj))
+        ray.get(oid)
     else:
-        wait_for_condition(
-            lambda: not ray.worker.global_worker.core_worker.object_exists(obj)
-        )
+        with pytest.raises(ray.exceptions.RayTimeoutError):
+            ray.get(oid, timeout=0.1)
 
 
-# Test that an object containing object refs within it pins the inner IDs
+# Test that an object containing object IDs within it pins the inner IDs
 # recursively and for submitted tasks.
 @pytest.mark.parametrize("use_ray_put,failure", [(False, False), (False, True),
                                                  (True, False), (True, True)])
@@ -99,11 +96,11 @@ def test_recursively_nest_ids(one_worker_100MiB, use_ray_put, failure):
     _fill_object_store_and_get(array_oid_bytes, succeed=False)
 
 
-# Test that serialized ObjectRefs returned from remote tasks are pinned until
+# Test that serialized objectIDs returned from remote tasks are pinned until
 # they go out of scope on the caller side.
 @pytest.mark.parametrize("use_ray_put,failure", [(False, False), (False, True),
                                                  (True, False), (True, True)])
-def test_return_object_ref(one_worker_100MiB, use_ray_put, failure):
+def test_return_object_id(one_worker_100MiB, use_ray_put, failure):
     @ray.remote
     def return_an_id():
         return [
@@ -139,11 +136,11 @@ def test_return_object_ref(one_worker_100MiB, use_ray_put, failure):
     _fill_object_store_and_get(inner_oid_binary, succeed=False)
 
 
-# Test that serialized ObjectRefs returned from remote tasks are pinned if
+# Test that serialized objectIDs returned from remote tasks are pinned if
 # passed into another remote task by the caller.
 @pytest.mark.parametrize("use_ray_put,failure", [(False, False), (False, True),
                                                  (True, False), (True, True)])
-def test_pass_returned_object_ref(one_worker_100MiB, use_ray_put, failure):
+def test_pass_returned_object_id(one_worker_100MiB, use_ray_put, failure):
     @ray.remote
     def return_an_id():
         return [
@@ -179,10 +176,10 @@ def test_pass_returned_object_ref(one_worker_100MiB, use_ray_put, failure):
 
     def ref_not_exists():
         worker = ray.worker.global_worker
-        inner_oid = ray.ObjectRef(inner_oid_binary)
+        inner_oid = ray.ObjectID(inner_oid_binary)
         return not worker.core_worker.object_exists(inner_oid)
 
-    wait_for_condition(ref_not_exists)
+    assert wait_for_condition(ref_not_exists)
 
 
 # Call a recursive chain of tasks that pass a serialized reference that was
@@ -191,8 +188,8 @@ def test_pass_returned_object_ref(one_worker_100MiB, use_ray_put, failure):
 # it finishes.
 @pytest.mark.parametrize("use_ray_put,failure", [(False, False), (False, True),
                                                  (True, False), (True, True)])
-def test_recursively_pass_returned_object_ref(one_worker_100MiB, use_ray_put,
-                                              failure):
+def test_recursively_pass_returned_object_id(one_worker_100MiB, use_ray_put,
+                                             failure):
     @ray.remote
     def return_an_id():
         return put_object(
@@ -246,14 +243,14 @@ def test_recursively_pass_returned_object_ref(one_worker_100MiB, use_ray_put,
 
 
 # Call a recursive chain of tasks. The final task in the chain returns an
-# ObjectRef returned by a task that it submitted. Every other task in the chain
-# returns the same ObjectRef by calling ray.get() on its submitted task and
+# ObjectID returned by a task that it submitted. Every other task in the chain
+# returns the same ObjectID by calling ray.get() on its submitted task and
 # returning the result. The reference should still exist while the driver has a
-# reference to the final task's ObjectRef.
+# reference to the final task's ObjectID.
 @pytest.mark.parametrize("use_ray_put,failure", [(False, False), (False, True),
                                                  (True, False), (True, True)])
-def test_recursively_return_borrowed_object_ref(one_worker_100MiB, use_ray_put,
-                                                failure):
+def test_recursively_return_borrowed_object_id(one_worker_100MiB, use_ray_put,
+                                               failure):
     @ray.remote
     def recursive(num_tasks_left):
         if num_tasks_left == 0:
@@ -283,59 +280,6 @@ def test_recursively_return_borrowed_object_ref(one_worker_100MiB, use_ray_put,
 
     # Reference should be gone, check that returned ID gets evicted.
     _fill_object_store_and_get(final_oid_bytes, succeed=False)
-
-
-@pytest.mark.parametrize("failure", [False, True])
-def test_borrowed_id_failure(one_worker_100MiB, failure):
-    @ray.remote
-    class Parent:
-        def __init__(self):
-            pass
-
-        def pass_ref(self, ref, borrower):
-            self.ref = ref[0]
-            ray.get(borrower.receive_ref.remote(ref))
-            if failure:
-                sys.exit(-1)
-
-        def ping(self):
-            return
-
-    @ray.remote
-    class Borrower:
-        def __init__(self):
-            self.ref = None
-
-        def receive_ref(self, ref):
-            self.ref = ref[0]
-
-        def resolve_ref(self):
-            assert self.ref is not None
-            if failure:
-                with pytest.raises(ray.exceptions.UnreconstructableError):
-                    ray.get(self.ref)
-            else:
-                ray.get(self.ref)
-
-        def ping(self):
-            return
-
-    parent = Parent.remote()
-    borrower = Borrower.remote()
-    ray.get(borrower.ping.remote())
-
-    obj = ray.put(np.zeros(40 * 1024 * 1024, dtype=np.uint8))
-    if failure:
-        with pytest.raises(ray.exceptions.RayActorError):
-            ray.get(parent.pass_ref.remote([obj], borrower))
-    else:
-        ray.get(parent.pass_ref.remote([obj], borrower))
-    obj_bytes = obj.binary()
-    del obj
-
-    _fill_object_store_and_get(obj_bytes, succeed=not failure)
-    # The borrower should not hang when trying to get the object's value.
-    ray.get(borrower.resolve_ref.remote())
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ fi
 if [ $exit_code -ne 2 ] && [ $exit_code -ne 0 ] ; then
     if [ -d "/tmp/ray_streaming_java_test_output/" ] ; then
       echo "all test output"
-      for f in /tmp/ray_streaming_java_test_output/*.{log,xml}; do
+      for f in /tmp/ray_streaming_java_test_output/*; do
         if [ -f "$f" ]; then
           echo "Cat file $f"
           cat "$f"

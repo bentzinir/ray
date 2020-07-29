@@ -5,10 +5,10 @@
 """
 from ray.rllib.utils.framework import try_import_tf
 
-tf1, tf, tfv = try_import_tf()
+tf = try_import_tf()
 
 
-class MultiHeadAttention(tf.keras.layers.Layer if tf else object):
+class MultiHeadAttention(tf.keras.layers.Layer):
     """A multi-head attention layer described in [1]."""
 
     def __init__(self, out_dim, num_heads, head_dim, **kwargs):
@@ -47,6 +47,5 @@ class MultiHeadAttention(tf.keras.layers.Layer if tf else object):
         wmat = tf.nn.softmax(masked_score, axis=2)
 
         out = tf.einsum("bijh,bjhd->bihd", wmat, values)
-        shape = tf.concat([tf.shape(out)[:2], [H * D]], axis=0)
-        out = tf.reshape(out, shape)
+        out = tf.reshape(out, tf.concat((tf.shape(out)[:2], [H * D]), axis=0))
         return self._linear_layer(out)

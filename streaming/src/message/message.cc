@@ -1,9 +1,9 @@
-#include "message/message.h"
+#include <utility>
 
 #include <cstring>
 #include <string>
-#include <utility>
 
+#include "message.h"
 #include "ray/common/status.h"
 #include "util/streaming_logging.h"
 

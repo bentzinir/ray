@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ray/raylet/reconstruction_policy.h"
+#include "reconstruction_policy.h"
 
 #include "ray/stats/stats.h"
 

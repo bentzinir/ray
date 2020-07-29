@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_STORE_CLIENT_REDIS_STORE_CLIENT_H
+#define RAY_GCS_STORE_CLIENT_REDIS_STORE_CLIENT_H
 
 #include "absl/container/flat_hash_set.h"
 #include "ray/gcs/redis_client.h"
 #include "ray/gcs/redis_context.h"
 #include "ray/gcs/store_client/store_client.h"
-#include "src/ray/protobuf/gcs.pb.h"
+#include "ray/protobuf/gcs.pb.h"
 
 namespace ray {
 
@@ -138,3 +139,5 @@ class RedisStoreClient : public StoreClient {
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_STORE_CLIENT_REDIS_STORE_CLIENT_H

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef RAY_MESSAGE_H
+#define RAY_MESSAGE_H
 
 #include <memory>
 
@@ -88,3 +89,5 @@ class StreamingMessage {
 
 }  // namespace streaming
 }  // namespace ray
+
+#endif  // RAY_MESSAGE_H

@@ -10,6 +10,7 @@ import platform
 import subprocess
 import sys
 from concurrent import futures
+
 import ray
 import psutil
 import ray.ray_constants as ray_constants
@@ -22,13 +23,6 @@ from ray.core.generated import reporter_pb2_grpc
 # into the program using Ray. Ray provides a default configuration at
 # entry/init points.
 logger = logging.getLogger(__name__)
-
-try:
-    import gpustat.core as gpustat
-except ImportError:
-    gpustat = None
-    logger.warning(
-        "Install gpustat with 'pip install gpustat' to enable GPU monitoring.")
 
 
 class ReporterServer(reporter_pb2_grpc.ReporterServiceServicer):
@@ -53,11 +47,7 @@ class ReporterServer(reporter_pb2_grpc.ReporterServiceServicer):
             with open(profiling_file_path, "r") as f:
                 profiling_stats = f.read()
         return reporter_pb2.GetProfilingStatsReply(
-            profiling_stats=profiling_stats, std_out=stdout, std_err=stderr)
-
-    def ReportMetrics(self, request, context):
-        # TODO(sang): Process metrics here.
-        return reporter_pb2.ReportMetricsReply()
+            profiling_stats=profiling_stats, stdout=stdout, stderr=stderr)
 
 
 def recursive_asdict(o):
@@ -98,12 +88,11 @@ class Reporter:
         redis_client: A client used to communicate with the Redis server.
     """
 
-    def __init__(self, redis_address, port, redis_password=None):
+    def __init__(self, redis_address, redis_password=None):
         """Initialize the reporter object."""
         self.cpu_counts = (psutil.cpu_count(), psutil.cpu_count(logical=False))
         self.ip = ray.services.get_node_ip_address()
         self.hostname = platform.node()
-        self.port = port
 
         _ = psutil.cpu_percent()  # For initialization
 
@@ -117,27 +106,6 @@ class Reporter:
     @staticmethod
     def get_cpu_percent():
         return psutil.cpu_percent()
-
-    @staticmethod
-    def get_gpu_usage():
-        if gpustat is None:
-            return []
-        gpu_utilizations = []
-        gpus = []
-        try:
-            gpus = gpustat.new_query().gpus
-        except Exception as e:
-            logger.debug(
-                "gpustat failed to retrieve GPU information: {}".format(e))
-        for gpu in gpus:
-            # Note the keys in this dict have periods which throws
-            # off javascript so we change .s to _s
-            gpu_data = {
-                "_".join(key.split(".")): val
-                for key, val in gpu.entry.items()
-            }
-            gpu_utilizations.append(gpu_data)
-        return gpu_utilizations
 
     @staticmethod
     def get_boot_time():
@@ -211,7 +179,6 @@ class Reporter:
             "boot_time": self.get_boot_time(),
             "load_avg": self.get_load_avg(),
             "disk": self.get_disk_usage(),
-            "gpus": self.get_gpu_usage(),
             "net": netstats,
         }
 
@@ -230,7 +197,7 @@ class Reporter:
         server = grpc.server(thread_pool, options=(("grpc.so_reuseport", 0), ))
         reporter_pb2_grpc.add_ReporterServiceServicer_to_server(
             ReporterServer(), server)
-        port = server.add_insecure_port("[::]:{}".format(self.port))
+        port = server.add_insecure_port("[::]:0")
         server.start()
         self.redis_client.set("REPORTER_PORT:{}".format(self.ip), port)
         """Run the reporter."""
@@ -254,11 +221,6 @@ if __name__ == "__main__":
         type=str,
         help="The address to use for Redis.")
     parser.add_argument(
-        "--port",
-        required=True,
-        type=int,
-        help="The port to bind the reporter process.")
-    parser.add_argument(
         "--redis-password",
         required=False,
         type=str,
@@ -280,8 +242,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     ray.utils.setup_logger(args.logging_level, args.logging_format)
 
-    reporter = Reporter(
-        args.redis_address, args.port, redis_password=args.redis_password)
+    reporter = Reporter(args.redis_address, redis_password=args.redis_password)
 
     try:
         reporter.run()

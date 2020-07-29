@@ -1,11 +1,12 @@
-#pragma once
+#ifndef _QUEUE_SERVICE_H_
+#define _QUEUE_SERVICE_H_
 
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 #include <boost/thread.hpp>
 #include <thread>
 
-#include "queue/queue.h"
+#include "queue.h"
 #include "util/streaming_logging.h"
 
 namespace ray {
@@ -176,3 +177,4 @@ class DownstreamQueueMessageHandler : public QueueMessageHandler {
 
 }  // namespace streaming
 }  // namespace ray
+#endif

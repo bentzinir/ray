@@ -19,10 +19,10 @@ from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.rollout import rollout
 from ray.rllib.tests.test_external_env import SimpleServing
 from ray.tune.registry import register_env
-from ray.rllib.utils.framework import try_import_tf, try_import_torch
+from ray.rllib.utils import try_import_tf, try_import_torch
 from ray.rllib.utils.spaces.repeated import Repeated
 
-tf1, tf, tfv = try_import_tf()
+tf = try_import_tf()
 _, nn = try_import_torch()
 
 DICT_SPACE = spaces.Dict({
@@ -241,9 +241,9 @@ class DictSpyModel(TFModelV2):
                 pickle.dumps((pos, front_cam, task)),
                 overwrite=True)
             DictSpyModel.capture_index += 1
-            return np.array(0, dtype=np.int64)
+            return 0
 
-        spy_fn = tf1.py_func(
+        spy_fn = tf.py_func(
             spy, [
                 input_dict["obs"]["sensors"]["position"],
                 input_dict["obs"]["sensors"]["front_cam"][0],
@@ -252,9 +252,9 @@ class DictSpyModel(TFModelV2):
             tf.int64,
             stateful=True)
 
-        with tf1.control_dependencies([spy_fn]):
-            output = tf1.layers.dense(input_dict["obs"]["sensors"]["position"],
-                                      self.num_outputs)
+        with tf.control_dependencies([spy_fn]):
+            output = tf.layers.dense(input_dict["obs"]["sensors"]["position"],
+                                     self.num_outputs)
         return output, []
 
 
@@ -270,9 +270,9 @@ class TupleSpyModel(TFModelV2):
                 pickle.dumps((pos, cam, task)),
                 overwrite=True)
             TupleSpyModel.capture_index += 1
-            return np.array(0, dtype=np.int64)
+            return 0
 
-        spy_fn = tf1.py_func(
+        spy_fn = tf.py_func(
             spy, [
                 input_dict["obs"][0],
                 input_dict["obs"][1][0],
@@ -281,8 +281,8 @@ class TupleSpyModel(TFModelV2):
             tf.int64,
             stateful=True)
 
-        with tf1.control_dependencies([spy_fn]):
-            output = tf1.layers.dense(input_dict["obs"][0], self.num_outputs)
+        with tf.control_dependencies([spy_fn]):
+            output = tf.layers.dense(input_dict["obs"][0], self.num_outputs)
         return output, []
 
 
@@ -299,7 +299,7 @@ class NestedSpacesTest(unittest.TestCase):
         ModelCatalog.register_custom_model("invalid", InvalidModel)
         self.assertRaisesRegexp(
             ValueError,
-            "Subclasses of TorchModelV2 must also inherit from nn.Module",
+            "optimizer got an empty parameter list",
             lambda: PGTrainer(
                 env="CartPole-v0",
                 config={

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef RAY_STREAMING_JNI_COMMON_H
+#define RAY_STREAMING_JNI_COMMON_H
 
 #include <jni.h>
 #include <string>
@@ -103,3 +104,4 @@ std::shared_ptr<ray::RayFunction> FunctionDescriptorToRayFunction(
 void ParseChannelInitParameters(
     JNIEnv *env, jobject param_obj,
     std::vector<ray::streaming::ChannelCreationParameter> &parameter_vec);
+#endif  // RAY_STREAMING_JNI_COMMON_H

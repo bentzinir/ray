@@ -1,13 +1,10 @@
 import enum
-import logging
 
 import ray
 import ray.streaming.generated.remote_call_pb2 as remote_call_pb
 import ray.streaming.operator as operator
 import ray.streaming.partition as partition
 from ray.streaming.generated.streaming_pb2 import Language
-
-logger = logging.getLogger(__name__)
 
 
 class NodeType(enum.Enum):
@@ -46,13 +43,7 @@ class ExecutionVertex:
         self.parallelism = vertex_pb.parallelism
         if vertex_pb.language == Language.PYTHON:
             operator_bytes = vertex_pb.operator  # python operator descriptor
-            if vertex_pb.chained:
-                logger.info("Load chained operator")
-                self.stream_operator = operator.load_chained_operator(
-                    operator_bytes)
-            else:
-                logger.info("Load operator")
-                self.stream_operator = operator.load_operator(operator_bytes)
+            self.stream_operator = operator.load_operator(operator_bytes)
         self.worker_actor = ray.actor.ActorHandle. \
             _deserialization_helper(vertex_pb.worker_actor)
         self.container_id = vertex_pb.container_id

@@ -14,6 +14,8 @@
 
 #include "ray/gcs/redis_context.h"
 
+#include <unistd.h>
+
 #include <sstream>
 
 #include "ray/stats/stats.h"
@@ -304,8 +306,7 @@ Status ConnectWithRetries(const std::string &address, int port,
     }
     RAY_LOG(WARNING) << "Failed to connect to Redis, retrying.";
     // Sleep for a little.
-    std::this_thread::sleep_for(std::chrono::milliseconds(
-        RayConfig::instance().redis_db_connect_wait_milliseconds()));
+    usleep(RayConfig::instance().redis_db_connect_wait_milliseconds() * 1000);
     *context = connect_function(address.c_str(), port);
     connection_attempts += 1;
   }
@@ -443,10 +444,6 @@ Status RedisContext::PublishAsync(const std::string &channel, const std::string 
   std::vector<std::string> args = {"PUBLISH", channel, message};
   return RunArgvAsync(args, redisCallback);
 }
-
-void RedisContext::FreeRedisReply(void *reply) { return freeReplyObject(reply); }
-
-int RedisContext::GetRedisError(redisContext *context) { return context->err; }
 
 }  // namespace gcs
 

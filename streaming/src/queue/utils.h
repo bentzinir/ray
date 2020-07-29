@@ -1,5 +1,5 @@
-#pragma once
-
+#ifndef _STREAMING_QUEUE_UTILS_H_
+#define _STREAMING_QUEUE_UTILS_H_
 #include <chrono>
 #include <future>
 #include <thread>
@@ -47,3 +47,4 @@ class PromiseWrapper {
 
 }  // namespace streaming
 }  // namespace ray
+#endif

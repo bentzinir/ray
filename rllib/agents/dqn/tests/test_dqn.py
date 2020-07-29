@@ -3,8 +3,11 @@ import unittest
 
 import ray
 import ray.rllib.agents.dqn as dqn
-from ray.rllib.utils.test_utils import check, check_compute_single_action, \
-    framework_iterator
+from ray.rllib.utils.framework import try_import_tf
+from ray.rllib.utils.test_utils import check, framework_iterator, \
+    check_compute_action
+
+tf = try_import_tf()
 
 
 class TestDQN(unittest.TestCase):
@@ -22,20 +25,20 @@ class TestDQN(unittest.TestCase):
         config["num_workers"] = 2
         num_iterations = 1
 
-        for _ in framework_iterator(config):
+        for fw in framework_iterator(config):
             # Double-dueling DQN.
-            print("Double-dueling")
             plain_config = config.copy()
             trainer = dqn.DQNTrainer(config=plain_config, env="CartPole-v0")
             for i in range(num_iterations):
                 results = trainer.train()
                 print(results)
 
-            check_compute_single_action(trainer)
-            trainer.stop()
+            check_compute_action(trainer)
 
             # Rainbow.
-            print("Rainbow")
+            # TODO(sven): Add torch once DQN-torch supports distributional-Q.
+            if fw == "torch":
+                continue
             rainbow_config = config.copy()
             rainbow_config["num_atoms"] = 10
             rainbow_config["noisy"] = True
@@ -47,8 +50,7 @@ class TestDQN(unittest.TestCase):
                 results = trainer.train()
                 print(results)
 
-            check_compute_single_action(trainer)
-            trainer.stop()
+            check_compute_action(trainer)
 
     def test_dqn_exploration_and_soft_q_config(self):
         """Tests, whether a DQN Agent outputs exploration/softmaxed actions."""
@@ -71,7 +73,6 @@ class TestDQN(unittest.TestCase):
             for _ in range(50):
                 actions.append(trainer.compute_action(obs))
             check(np.std(actions), 0.0, false=True)
-            trainer.stop()
 
             # Low softmax temperature. Behaves like argmax
             # (but no epsilon exploration).
@@ -85,7 +86,6 @@ class TestDQN(unittest.TestCase):
             for _ in range(50):
                 actions.append(trainer.compute_action(obs))
             check(np.std(actions), 0.0, decimals=3)
-            trainer.stop()
 
             # Higher softmax temperature.
             config["exploration_config"]["temperature"] = 1.0
@@ -104,7 +104,6 @@ class TestDQN(unittest.TestCase):
             for _ in range(300):
                 actions.append(trainer.compute_action(obs))
             check(np.std(actions), 0.0, false=True)
-            trainer.stop()
 
             # With Random exploration.
             config["exploration_config"] = {"type": "Random"}
@@ -114,7 +113,6 @@ class TestDQN(unittest.TestCase):
             for _ in range(300):
                 actions.append(trainer.compute_action(obs))
             check(np.std(actions), 0.0, false=True)
-            trainer.stop()
 
 
 if __name__ == "__main__":

@@ -33,7 +33,6 @@ def list_changed_files(commit_range):
 if __name__ == "__main__":
 
     RAY_CI_TUNE_AFFECTED = 0
-    RAY_CI_SGD_AFFECTED = 0
     RAY_CI_ONLY_RLLIB_AFFECTED = 0  # Whether only RLlib is affected.
     RAY_CI_RLLIB_AFFECTED = 0  # Whether RLlib minimal tests should be run.
     RAY_CI_RLLIB_FULL_AFFECTED = 0  # Whether full RLlib tests should be run.
@@ -74,10 +73,6 @@ if __name__ == "__main__":
                 RAY_CI_RLLIB_FULL_AFFECTED = 1
                 RAY_CI_LINUX_WHEELS_AFFECTED = 1
                 RAY_CI_MACOS_WHEELS_AFFECTED = 1
-            elif changed_file.startswith("python/ray/util/sgd"):
-                RAY_CI_SGD_AFFECTED = 1
-                RAY_CI_LINUX_WHEELS_AFFECTED = 1
-                RAY_CI_MACOS_WHEELS_AFFECTED = 1
             elif re.match("^(python/ray/)?rllib/", changed_file):
                 RAY_CI_RLLIB_AFFECTED = 1
                 RAY_CI_RLLIB_FULL_AFFECTED = 1
@@ -91,7 +86,6 @@ if __name__ == "__main__":
                 RAY_CI_DASHBOARD_AFFECTED = 1
             elif changed_file.startswith("python/"):
                 RAY_CI_TUNE_AFFECTED = 1
-                RAY_CI_SGD_AFFECTED = 1
                 RAY_CI_RLLIB_AFFECTED = 1
                 RAY_CI_SERVE_AFFECTED = 1
                 RAY_CI_PYTHON_AFFECTED = 1
@@ -109,7 +103,6 @@ if __name__ == "__main__":
                 pass
             elif changed_file.startswith("src/"):
                 RAY_CI_TUNE_AFFECTED = 1
-                RAY_CI_SGD_AFFECTED = 1
                 RAY_CI_RLLIB_AFFECTED = 1
                 RAY_CI_SERVE_AFFECTED = 1
                 RAY_CI_JAVA_AFFECTED = 1
@@ -130,7 +123,6 @@ if __name__ == "__main__":
                 RAY_CI_STREAMING_JAVA_AFFECTED = 1
             else:
                 RAY_CI_TUNE_AFFECTED = 1
-                RAY_CI_SGD_AFFECTED = 1
                 RAY_CI_RLLIB_AFFECTED = 1
                 RAY_CI_SERVE_AFFECTED = 1
                 RAY_CI_JAVA_AFFECTED = 1
@@ -142,7 +134,6 @@ if __name__ == "__main__":
                 RAY_CI_STREAMING_JAVA_AFFECTED = 1
     else:
         RAY_CI_TUNE_AFFECTED = 1
-        RAY_CI_SGD_AFFECTED = 1
         RAY_CI_RLLIB_AFFECTED = 1
         RAY_CI_RLLIB_FULL_AFFECTED = 1
         RAY_CI_SERVE_AFFECTED = 1
@@ -158,14 +149,12 @@ if __name__ == "__main__":
             not RAY_CI_JAVA_AFFECTED and not RAY_CI_PYTHON_AFFECTED and not \
             RAY_CI_STREAMING_CPP_AFFECTED and \
             not RAY_CI_STREAMING_PYTHON_AFFECTED and \
-            not RAY_CI_STREAMING_JAVA_AFFECTED and \
-            not RAY_CI_SGD_AFFECTED:
+            not RAY_CI_STREAMING_JAVA_AFFECTED:
         RAY_CI_ONLY_RLLIB_AFFECTED = 1
 
     # Log the modified environment variables visible in console.
     print(" ".join([
         "RAY_CI_TUNE_AFFECTED={}".format(RAY_CI_TUNE_AFFECTED),
-        "RAY_CI_SGD_AFFECTED={}".format(RAY_CI_SGD_AFFECTED),
         "RAY_CI_ONLY_RLLIB_AFFECTED={}".format(RAY_CI_ONLY_RLLIB_AFFECTED),
         "RAY_CI_RLLIB_AFFECTED={}".format(RAY_CI_RLLIB_AFFECTED),
         "RAY_CI_RLLIB_FULL_AFFECTED={}".format(RAY_CI_RLLIB_FULL_AFFECTED),

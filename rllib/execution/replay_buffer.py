@@ -1,34 +1,31 @@
-import collections
-import logging
 import numpy as np
-import platform
 import random
-from typing import List
+import collections
+import platform
+import sys
 
 import ray
 from ray.rllib.execution.segment_tree import SumSegmentTree, MinSegmentTree
-from ray.rllib.policy.sample_batch import SampleBatch, MultiAgentBatch, \
-    DEFAULT_POLICY_ID
+from ray.rllib.policy.sample_batch import SampleBatch, DEFAULT_POLICY_ID, \
+    MultiAgentBatch
 from ray.rllib.utils.annotations import DeveloperAPI
+from ray.rllib.utils.compression import unpack_if_needed
 from ray.util.iter import ParallelIteratorWorker
 from ray.rllib.utils.timer import TimerStat
 from ray.rllib.utils.window_stat import WindowStat
-from ray.rllib.utils.types import SampleBatchType
-
-# Constant that represents all policies in lockstep replay mode.
-_ALL_POLICIES = "__all__"
-
-logger = logging.getLogger(__name__)
 
 
 @DeveloperAPI
 class ReplayBuffer:
     @DeveloperAPI
-    def __init__(self, size: int):
+    def __init__(self, size):
         """Create Prioritized Replay buffer.
 
-        Args:
-            size (int): Max number of items to store in the FIFO buffer.
+        Parameters
+        ----------
+        size: int
+          Max number of transitions to store in the buffer. When the buffer
+          overflows the old memories are dropped.
         """
         self._storage = []
         self._maxsize = size
@@ -44,15 +41,15 @@ class ReplayBuffer:
         return len(self._storage)
 
     @DeveloperAPI
-    def add(self, item: SampleBatchType, weight: float):
-        assert item.count > 0, item
+    def add(self, obs_t, action, reward, obs_tp1, done, member, weight):
+        data = (obs_t, action, reward, obs_tp1, done, member)
         self._num_added += 1
 
         if self._next_idx >= len(self._storage):
-            self._storage.append(item)
-            self._est_size_bytes += item.size_bytes()
+            self._storage.append(data)
+            self._est_size_bytes += sum(sys.getsizeof(d) for d in data)
         else:
-            self._storage[self._next_idx] = item
+            self._storage[self._next_idx] = data
         if self._next_idx + 1 >= self._maxsize:
             self._eviction_started = True
         self._next_idx = (self._next_idx + 1) % self._maxsize
@@ -60,26 +57,60 @@ class ReplayBuffer:
             self._evicted_hit_stats.push(self._hit_count[self._next_idx])
             self._hit_count[self._next_idx] = 0
 
-    def _encode_sample(self, idxes: List[int]) -> SampleBatchType:
-        out = SampleBatch.concat_samples([self._storage[i] for i in idxes])
-        out.decompress_if_needed()
-        return out
+    def _encode_sample(self, idxes):
+        obses_t, actions, rewards, obses_tp1, dones, members = [], [], [], [], [], []
+        for i in idxes:
+            data = self._storage[i]
+            obs_t, action, reward, obs_tp1, done, member = data
+            obses_t.append(np.array(unpack_if_needed(obs_t), copy=False))
+            actions.append(np.array(action, copy=False))
+            rewards.append(reward)
+            obses_tp1.append(np.array(unpack_if_needed(obs_tp1), copy=False))
+            dones.append(done)
+            members.append(member)
+            self._hit_count[i] += 1
+        return (np.array(obses_t), np.array(actions), np.array(rewards),
+                np.array(obses_tp1), np.array(dones), np.array(members))
 
     @DeveloperAPI
-    def sample(self, num_items: int) -> SampleBatchType:
+    def sample_idxes(self, batch_size):
+        return np.random.randint(0, len(self._storage), batch_size)
+
+    @DeveloperAPI
+    def sample_with_idxes(self, idxes):
+        self._num_sampled += len(idxes)
+        return self._encode_sample(idxes)
+
+    @DeveloperAPI
+    def sample(self, batch_size):
         """Sample a batch of experiences.
 
-        Args:
-            num_items (int): Number of items to sample from this buffer.
+        Parameters
+        ----------
+        batch_size: int
+            How many transitions to sample.
 
-        Returns:
-            SampleBatchType: concatenated batch of items.
+        Returns
+        -------
+        obs_batch: np.array
+          batch of observations
+        act_batch: np.array
+          batch of actions executed given obs_batch
+        rew_batch: np.array
+          rewards received as results of executing act_batch
+        next_obs_batch: np.array
+          next set of observations seen after executing act_batch
+        done_mask: np.array
+          done_mask[i] = 1 if executing act_batch[i] resulted in
+          the end of an episode and 0 otherwise.
+          member: np.array
+          the index in the ensemble member that is responsible for this transaction
         """
         idxes = [
             random.randint(0,
-                           len(self._storage) - 1) for _ in range(num_items)
+                           len(self._storage) - 1) for _ in range(batch_size)
         ]
-        self._num_sampled += num_items
+        self._num_sampled += batch_size
         return self._encode_sample(idxes)
 
     @DeveloperAPI
@@ -98,16 +129,21 @@ class ReplayBuffer:
 @DeveloperAPI
 class PrioritizedReplayBuffer(ReplayBuffer):
     @DeveloperAPI
-    def __init__(self, size: int, alpha: float):
+    def __init__(self, size, alpha):
         """Create Prioritized Replay buffer.
 
-        Args:
-            size (int): Max number of items to store in the FIFO buffer.
-            alpha (float): how much prioritization is used
-                (0 - no prioritization, 1 - full prioritization).
+        Parameters
+        ----------
+        size: int
+          Max number of transitions to store in the buffer. When the buffer
+          overflows the old memories are dropped.
+        alpha: float
+          how much prioritization is used
+          (0 - no prioritization, 1 - full prioritization)
 
-        See also:
-            ReplayBuffer.__init__()
+        See Also
+        --------
+        ReplayBuffer.__init__
         """
         super(PrioritizedReplayBuffer, self).__init__(size)
         assert alpha > 0
@@ -123,17 +159,20 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         self._prio_change_stats = WindowStat("reprio", 1000)
 
     @DeveloperAPI
-    def add(self, item: SampleBatchType, weight: float):
+    def add(self, obs_t, action, reward, obs_tp1, done, member, weight):
+        """See ReplayBuffer.store_effect"""
+
         idx = self._next_idx
-        super(PrioritizedReplayBuffer, self).add(item, weight)
+        super(PrioritizedReplayBuffer, self).add(obs_t, action, reward,
+                                                 obs_tp1, done, member, weight)
         if weight is None:
             weight = self._max_priority
         self._it_sum[idx] = weight**self._alpha
         self._it_min[idx] = weight**self._alpha
 
-    def _sample_proportional(self, num_items: int):
+    def _sample_proportional(self, batch_size):
         res = []
-        for _ in range(num_items):
+        for _ in range(batch_size):
             # TODO(szymon): should we ensure no repeats?
             mass = random.random() * self._it_sum.sum(0, len(self._storage))
             idx = self._it_sum.find_prefixsum_idx(mass)
@@ -141,45 +180,79 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         return res
 
     @DeveloperAPI
-    def sample(self, num_items: int, beta: float) -> SampleBatchType:
-        """Sample a batch of experiences and return priority weights, indices.
+    def sample_idxes(self, batch_size):
+        return self._sample_proportional(batch_size)
 
-        Args:
-            num_items (int): Number of items to sample from this buffer.
-            beta (float): To what degree to use importance weights
-                (0 - no corrections, 1 - full correction).
-
-        Returns:
-            SampleBatchType: Concatenated batch of items including "weights"
-                and "batch_indexes" fields denoting IS of each sampled
-                transition and original idxes in buffer of sampled experiences.
-        """
-        assert beta >= 0.0
-        self._num_sampled += num_items
-
-        idxes = self._sample_proportional(num_items)
+    @DeveloperAPI
+    def sample_with_idxes(self, idxes, beta):
+        assert beta > 0
+        self._num_sampled += len(idxes)
 
         weights = []
-        batch_indexes = []
         p_min = self._it_min.min() / self._it_sum.sum()
         max_weight = (p_min * len(self._storage))**(-beta)
 
         for idx in idxes:
             p_sample = self._it_sum[idx] / self._it_sum.sum()
             weight = (p_sample * len(self._storage))**(-beta)
-            count = self._storage[idx].count
-            weights.extend([weight / max_weight] * count)
-            batch_indexes.extend([idx] * count)
-        batch = self._encode_sample(idxes)
+            weights.append(weight / max_weight)
+        weights = np.array(weights)
+        encoded_sample = self._encode_sample(idxes)
+        return tuple(list(encoded_sample) + [weights, idxes])
 
-        # Note: prioritization is not supported in lockstep replay mode.
-        if isinstance(batch, SampleBatch):
-            assert len(weights) == batch.count
-            assert len(batch_indexes) == batch.count
-            batch["weights"] = np.array(weights)
-            batch["batch_indexes"] = np.array(batch_indexes)
+    @DeveloperAPI
+    def sample(self, batch_size, beta):
+        """Sample a batch of experiences.
 
-        return batch
+        compared to ReplayBuffer.sample
+        it also returns importance weights and idxes
+        of sampled experiences.
+
+
+        Parameters
+        ----------
+        batch_size: int
+          How many transitions to sample.
+        beta: float
+          To what degree to use importance weights
+          (0 - no corrections, 1 - full correction)
+
+        Returns
+        -------
+        obs_batch: np.array
+          batch of observations
+        act_batch: np.array
+          batch of actions executed given obs_batch
+        rew_batch: np.array
+          rewards received as results of executing act_batch
+        next_obs_batch: np.array
+          next set of observations seen after executing act_batch
+        done_mask: np.array
+          done_mask[i] = 1 if executing act_batch[i] resulted in
+          the end of an episode and 0 otherwise.
+        weights: np.array
+          Array of shape (batch_size,) and dtype np.float32
+          denoting importance weight of each sampled transition
+        idxes: np.array
+          Array of shape (batch_size,) and dtype np.int32
+          idexes in buffer of sampled experiences
+        """
+        assert beta >= 0.0
+        self._num_sampled += batch_size
+
+        idxes = self._sample_proportional(batch_size)
+
+        weights = []
+        p_min = self._it_min.min() / self._it_sum.sum()
+        max_weight = (p_min * len(self._storage))**(-beta)
+
+        for idx in idxes:
+            p_sample = self._it_sum[idx] / self._it_sum.sum()
+            weight = (p_sample * len(self._storage))**(-beta)
+            weights.append(weight / max_weight)
+        weights = np.array(weights)
+        encoded_sample = self._encode_sample(idxes)
+        return tuple(list(encoded_sample) + [weights, idxes])
 
     @DeveloperAPI
     def update_priorities(self, idxes, priorities):
@@ -220,6 +293,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 _local_replay_buffer = None
 
 
+# TODO(ekl) move this class to common
 class LocalReplayBuffer(ParallelIteratorWorker):
     """A replay buffer shard.
 
@@ -234,27 +308,13 @@ class LocalReplayBuffer(ParallelIteratorWorker):
                  prioritized_replay_alpha=0.6,
                  prioritized_replay_beta=0.4,
                  prioritized_replay_eps=1e-6,
-                 replay_mode="independent",
-                 replay_sequence_length=1):
+                 multiagent_sync_replay=False):
         self.replay_starts = learning_starts // num_shards
         self.buffer_size = buffer_size // num_shards
         self.replay_batch_size = replay_batch_size
         self.prioritized_replay_beta = prioritized_replay_beta
         self.prioritized_replay_eps = prioritized_replay_eps
-        self.replay_mode = replay_mode
-        self.replay_sequence_length = replay_sequence_length
-
-        if replay_sequence_length > 1:
-            self.replay_batch_size = int(
-                max(1, replay_batch_size // replay_sequence_length))
-            logger.info(
-                "Since replay_sequence_length={} and replay_batch_size={}, "
-                "we will replay {} sequences at a time.".format(
-                    replay_sequence_length, replay_batch_size,
-                    self.replay_batch_size))
-
-        if replay_mode not in ["lockstep", "independent"]:
-            raise ValueError("Unsupported replay mode: {}".format(replay_mode))
+        self.multiagent_sync_replay = multiagent_sync_replay
 
         def gen_replay():
             while True:
@@ -295,18 +355,14 @@ class LocalReplayBuffer(ParallelIteratorWorker):
         if isinstance(batch, SampleBatch):
             batch = MultiAgentBatch({DEFAULT_POLICY_ID: batch}, batch.count)
         with self.add_batch_timer:
-            if self.replay_mode == "lockstep":
-                # Note that prioritization is not supported in this mode.
-                for s in batch.timeslices(self.replay_sequence_length):
-                    self.replay_buffers[_ALL_POLICIES].add(s, weight=None)
-            else:
-                for policy_id, b in batch.policy_batches.items():
-                    for s in b.timeslices(self.replay_sequence_length):
-                        if "weights" in s:
-                            weight = np.mean(s["weights"])
-                        else:
-                            weight = None
-                        self.replay_buffers[policy_id].add(s, weight=weight)
+            for policy_id, s in batch.policy_batches.items():
+                for row in s.rows():
+                    self.replay_buffers[policy_id].add(
+                        row["obs"], row["actions"], row["rewards"],
+                        row["new_obs"], row["dones"],
+                        row["members"] if "members" in row else None,
+                        row["weights"] if "weights" in row else None,
+                    )
         self.num_added += batch.count
 
     def replay(self):
@@ -320,16 +376,29 @@ class LocalReplayBuffer(ParallelIteratorWorker):
             return None
 
         with self.replay_timer:
-            if self.replay_mode == "lockstep":
-                return self.replay_buffers[_ALL_POLICIES].sample(
-                    self.replay_batch_size, beta=self.prioritized_replay_beta)
-            else:
-                samples = {}
-                for policy_id, replay_buffer in self.replay_buffers.items():
-                    samples[policy_id] = replay_buffer.sample(
-                        self.replay_batch_size,
-                        beta=self.prioritized_replay_beta)
-                return MultiAgentBatch(samples, self.replay_batch_size)
+            samples = {}
+            idxes = None
+            for policy_id, replay_buffer in self.replay_buffers.items():
+                if self.multiagent_sync_replay:
+                    if idxes is None:
+                        idxes = replay_buffer.sample_idxes(
+                            self.replay_batch_size)
+                else:
+                    idxes = replay_buffer.sample_idxes(self.replay_batch_size)
+                (obses_t, actions, rewards, obses_tp1, dones, members, weights,
+                 batch_indexes) = replay_buffer.sample_with_idxes(
+                     idxes, beta=self.prioritized_replay_beta)
+                samples[policy_id] = SampleBatch({
+                    "obs": obses_t,
+                    "actions": actions,
+                    "rewards": rewards,
+                    "new_obs": obses_tp1,
+                    "dones": dones,
+                    "weights": weights,
+                    "batch_indexes": batch_indexes,
+                    "members": members,
+                })
+            return MultiAgentBatch(samples, self.replay_batch_size)
 
     def update_priorities(self, prio_dict):
         with self.update_priorities_timer:

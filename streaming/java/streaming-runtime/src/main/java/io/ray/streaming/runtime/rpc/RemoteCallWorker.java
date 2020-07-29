@@ -32,11 +32,11 @@ public class RemoteCallWorker {
 
     // python
     if (actor instanceof PyActorHandle) {
-      result = ((PyActorHandle) actor).task(PyActorMethod.of("init", Boolean.class),
-          context.getPythonWorkerContextBytes()).remote();
+      result = ((PyActorHandle) actor).call(
+          new PyActorMethod("init", Object.class), context.getPythonWorkerContextBytes());
     } else {
       // java
-      result = ((ActorHandle<JobWorker>) actor).task(JobWorker::init, context).remote();
+      result = ((ActorHandle<JobWorker>) actor).call(JobWorker::init, context);
     }
 
     LOG.info("Finished calling worker to initiate.");
@@ -55,11 +55,10 @@ public class RemoteCallWorker {
 
     // python
     if (actor instanceof PyActorHandle) {
-      result = ((PyActorHandle) actor)
-          .task(PyActorMethod.of("start", Boolean.class)).remote();
+      result = ((PyActorHandle) actor).call(new PyActorMethod("start", Object.class));
     } else {
       // java
-      result = ((ActorHandle<JobWorker>) actor).task(JobWorker::start).remote();
+      result = ((ActorHandle<JobWorker>) actor).call(JobWorker::start);
     }
 
     LOG.info("Finished calling worker to start.");

@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_GCS_ACCESSOR_H
+#define RAY_GCS_ACCESSOR_H
 
 #include "ray/common/id.h"
-#include "ray/common/placement_group.h"
 #include "ray/common/task/task_spec.h"
 #include "ray/gcs/callback.h"
 #include "ray/gcs/entry_change_notification.h"
-#include "src/ray/protobuf/gcs.pb.h"
+#include "ray/protobuf/gcs.pb.h"
 
 namespace ray {
 
@@ -62,20 +62,7 @@ class ActorInfoAccessor {
       const std::string &name,
       const OptionalItemCallback<rpc::ActorTableData> &callback) = 0;
 
-  /// Register actor to GCS asynchronously.
-  ///
-  /// \param task_spec The specification for the actor creation task.
-  /// \param callback Callback that will be called after the actor info is written to GCS.
-  /// \return Status
-  virtual Status AsyncRegisterActor(const TaskSpecification &task_spec,
-                                    const StatusCallback &callback) = 0;
-
-  /// Asynchronously request GCS to create the actor.
-  ///
-  /// This should be called after the worker has resolved the actor dependencies.
-  /// TODO(...): Currently this request will only reply after the actor is created.
-  /// We should change it to reply immediately after GCS has persisted the actor
-  /// dependencies in storage.
+  /// Create an actor to GCS asynchronously.
   ///
   /// \param task_spec The specification for the actor creation task.
   /// \param callback Callback that will be called after the actor info is written to GCS.
@@ -166,12 +153,9 @@ class ActorInfoAccessor {
 
   /// Reestablish subscription.
   /// This should be called when GCS server restarts from a failure.
-  /// PubSub server restart will cause GCS server restart. In this case, we need to
-  /// resubscribe from PubSub server, otherwise we only need to fetch data from GCS
-  /// server.
   ///
-  /// \param is_pubsub_server_restarted Whether pubsub server is restarted.
-  virtual void AsyncResubscribe(bool is_pubsub_server_restarted) = 0;
+  /// \return Status
+  virtual Status AsyncReSubscribe() = 0;
 
  protected:
   ActorInfoAccessor() = default;
@@ -202,12 +186,12 @@ class JobInfoAccessor {
   virtual Status AsyncMarkFinished(const JobID &job_id,
                                    const StatusCallback &callback) = 0;
 
-  /// Subscribe to job updates.
+  /// Subscribe to finished jobs.
   ///
-  /// \param subscribe Callback that will be called each time when a job updates.
+  /// \param subscribe Callback that will be called each time when a job finishes.
   /// \param done Callback that will be called when subscription is complete.
   /// \return Status
-  virtual Status AsyncSubscribeAll(
+  virtual Status AsyncSubscribeToFinishedJobs(
       const SubscribeCallback<JobID, rpc::JobTableData> &subscribe,
       const StatusCallback &done) = 0;
 
@@ -219,12 +203,9 @@ class JobInfoAccessor {
 
   /// Reestablish subscription.
   /// This should be called when GCS server restarts from a failure.
-  /// PubSub server restart will cause GCS server restart. In this case, we need to
-  /// resubscribe from PubSub server, otherwise we only need to fetch data from GCS
-  /// server.
   ///
-  /// \param is_pubsub_server_restarted Whether pubsub server is restarted.
-  virtual void AsyncResubscribe(bool is_pubsub_server_restarted) = 0;
+  /// \return Status
+  virtual Status AsyncReSubscribe() = 0;
 
  protected:
   JobInfoAccessor() = default;
@@ -330,12 +311,9 @@ class TaskInfoAccessor {
 
   /// Reestablish subscription.
   /// This should be called when GCS server restarts from a failure.
-  /// PubSub server restart will cause GCS server restart. In this case, we need to
-  /// resubscribe from PubSub server, otherwise we only need to fetch data from GCS
-  /// server.
   ///
-  /// \param is_pubsub_server_restarted Whether pubsub server is restarted.
-  virtual void AsyncResubscribe(bool is_pubsub_server_restarted) = 0;
+  /// \return Status
+  virtual Status AsyncReSubscribe() = 0;
 
  protected:
   TaskInfoAccessor() = default;
@@ -402,12 +380,9 @@ class ObjectInfoAccessor {
 
   /// Reestablish subscription.
   /// This should be called when GCS server restarts from a failure.
-  /// PubSub server restart will cause GCS server restart. In this case, we need to
-  /// resubscribe from PubSub server, otherwise we only need to fetch data from GCS
-  /// server.
   ///
-  /// \param is_pubsub_server_restarted Whether pubsub server is restarted.
-  virtual void AsyncResubscribe(bool is_pubsub_server_restarted) = 0;
+  /// \return Status
+  virtual Status AsyncReSubscribe() = 0;
 
  protected:
   ObjectInfoAccessor() = default;
@@ -581,28 +556,9 @@ class NodeInfoAccessor {
 
   /// Reestablish subscription.
   /// This should be called when GCS server restarts from a failure.
-  /// PubSub server restart will cause GCS server restart. In this case, we need to
-  /// resubscribe from PubSub server, otherwise we only need to fetch data from GCS
-  /// server.
   ///
-  /// \param is_pubsub_server_restarted Whether pubsub server is restarted.
-  virtual void AsyncResubscribe(bool is_pubsub_server_restarted) = 0;
-
-  /// Set the internal config string that will be used by all nodes started in the
-  /// cluster.
-  ///
-  /// \param config Map of config options
   /// \return Status
-  virtual Status AsyncSetInternalConfig(
-      std::unordered_map<std::string, std::string> &config) = 0;
-
-  /// Get the internal config string from GCS.
-  ///
-  /// \param callback Processes a map of config options
-  /// \return Status
-  virtual Status AsyncGetInternalConfig(
-      const OptionalItemCallback<std::unordered_map<std::string, std::string>>
-          &callback) = 0;
+  virtual Status AsyncReSubscribe() = 0;
 
  protected:
   NodeInfoAccessor() = default;
@@ -677,7 +633,7 @@ class WorkerInfoAccessor {
   /// \param done Callback that will be called when subscription is complete.
   /// \return Status
   virtual Status AsyncSubscribeToWorkerFailures(
-      const SubscribeCallback<WorkerID, rpc::WorkerTableData> &subscribe,
+      const SubscribeCallback<WorkerID, rpc::WorkerFailureData> &subscribe,
       const StatusCallback &done) = 0;
 
   /// Report a worker failure to GCS asynchronously.
@@ -686,62 +642,32 @@ class WorkerInfoAccessor {
   /// \param callback Callback that will be called when report is complate.
   /// \param Status
   virtual Status AsyncReportWorkerFailure(
-      const std::shared_ptr<rpc::WorkerTableData> &data_ptr,
+      const std::shared_ptr<rpc::WorkerFailureData> &data_ptr,
       const StatusCallback &callback) = 0;
 
-  /// Get worker specification from GCS asynchronously.
+  /// Register a worker to GCS asynchronously.
   ///
-  /// \param worker_id The ID of worker to look up in the GCS.
-  /// \param callback Callback that will be called after lookup finishes.
-  /// \return Status
-  virtual Status AsyncGet(const WorkerID &worker_id,
-                          const OptionalItemCallback<rpc::WorkerTableData> &callback) = 0;
-
-  /// Get all worker info from GCS asynchronously.
-  ///
-  /// \param callback Callback that will be called after lookup finished.
-  /// \return Status
-  virtual Status AsyncGetAll(const MultiItemCallback<rpc::WorkerTableData> &callback) = 0;
-
-  /// Add worker information to GCS asynchronously.
-  ///
-  /// \param data_ptr The worker that will be add to GCS.
-  /// \param callback Callback that will be called after worker information has been added
-  /// to GCS.
-  /// \return Status
-  virtual Status AsyncAdd(const std::shared_ptr<rpc::WorkerTableData> &data_ptr,
-                          const StatusCallback &callback) = 0;
+  /// \param worker_type The type of the worker.
+  /// \param worker_id The ID of the worker.
+  /// \param worker_info The information of the worker.
+  /// \return Status.
+  virtual Status AsyncRegisterWorker(
+      rpc::WorkerType worker_type, const WorkerID &worker_id,
+      const std::unordered_map<std::string, std::string> &worker_info,
+      const StatusCallback &callback) = 0;
 
   /// Reestablish subscription.
   /// This should be called when GCS server restarts from a failure.
-  /// PubSub server restart will cause GCS server restart. In this case, we need to
-  /// resubscribe from PubSub server, otherwise we only need to fetch data from GCS
-  /// server.
   ///
-  /// \param is_pubsub_server_restarted Whether pubsub server is restarted.
-  virtual void AsyncResubscribe(bool is_pubsub_server_restarted) = 0;
+  /// \return Status
+  virtual Status AsyncReSubscribe() = 0;
 
  protected:
   WorkerInfoAccessor() = default;
 };
 
-class PlacementGroupInfoAccessor {
- public:
-  virtual ~PlacementGroupInfoAccessor() = default;
-
-  // TODO(AlisaWu): fill the accessor.
-  /// Create an placement group to GCS asynchronously.
-  ///
-  /// \param placement_group_spec The specification for the placement group creation task.
-  /// \param callback Callback that will be called after the placement group info is
-  /// written to GCS. \return Status
-  virtual Status AsyncCreatePlacementGroup(
-      const PlacementGroupSpecification &placement_group_spec) = 0;
-
- protected:
-  PlacementGroupInfoAccessor() = default;
-};
-
 }  // namespace gcs
 
 }  // namespace ray
+
+#endif  // RAY_GCS_ACCESSOR_H

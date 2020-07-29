@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ray/raylet/task_dependency_manager.h"
+#include "task_dependency_manager.h"
 
 #include "absl/time/clock.h"
 #include "ray/stats/stats.h"
@@ -92,7 +92,7 @@ std::vector<TaskID> TaskDependencyManager::HandleObjectLocal(
     const ray::ObjectID &object_id) {
   // Add the object to the table of locally available objects.
   auto inserted = local_objects_.insert(object_id);
-  RAY_CHECK(inserted.second) << object_id;
+  RAY_CHECK(inserted.second);
 
   // Find all tasks and workers that depend on the newly available object.
   std::vector<TaskID> ready_task_ids;
@@ -173,12 +173,11 @@ std::vector<TaskID> TaskDependencyManager::HandleObjectMissing(
 }
 
 bool TaskDependencyManager::SubscribeGetDependencies(
-    const TaskID &task_id, const std::vector<rpc::ObjectReference> &required_objects) {
+    const TaskID &task_id, const std::vector<ObjectID> &required_objects) {
   auto &task_entry = task_dependencies_[task_id];
 
   // Record the task's dependencies.
-  for (const auto &object : required_objects) {
-    const auto &object_id = ObjectID::FromBinary(object.object_id());
+  for (const auto &object_id : required_objects) {
     auto inserted = task_entry.get_dependencies.insert(object_id);
     if (inserted.second) {
       RAY_LOG(DEBUG) << "Task " << task_id << " blocked on object " << object_id;
@@ -189,23 +188,15 @@ bool TaskDependencyManager::SubscribeGetDependencies(
         // The object is not local.
         task_entry.num_missing_get_dependencies++;
       }
-
-      auto it = required_tasks_[creating_task_id].find(object_id);
-      if (it == required_tasks_[creating_task_id].end()) {
-        it = required_tasks_[creating_task_id]
-                 .emplace(object_id, ObjectDependencies(object))
-                 .first;
-      }
       // Add the subscribed task to the mapping from object ID to list of
       // dependent tasks.
-      it->second.dependent_tasks.insert(task_id);
+      required_tasks_[creating_task_id][object_id].dependent_tasks.insert(task_id);
     }
   }
 
   // These dependencies are required by the given task. Try to make them local
   // if necessary.
-  for (const auto &object : required_objects) {
-    const auto &object_id = ObjectID::FromBinary(object.object_id());
+  for (const auto &object_id : required_objects) {
     HandleRemoteDependencyRequired(object_id);
   }
 
@@ -214,13 +205,11 @@ bool TaskDependencyManager::SubscribeGetDependencies(
 }
 
 void TaskDependencyManager::SubscribeWaitDependencies(
-    const WorkerID &worker_id,
-    const std::vector<rpc::ObjectReference> &required_objects) {
+    const WorkerID &worker_id, const std::vector<ObjectID> &required_objects) {
   auto &worker_entry = worker_dependencies_[worker_id];
 
   // Record the worker's dependencies.
-  for (const auto &object : required_objects) {
-    const auto &object_id = ObjectID::FromBinary(object.object_id());
+  for (const auto &object_id : required_objects) {
     if (local_objects_.count(object_id) == 0) {
       RAY_LOG(DEBUG) << "Worker " << worker_id << " called ray.wait on remote object "
                      << object_id;
@@ -229,24 +218,19 @@ void TaskDependencyManager::SubscribeWaitDependencies(
       auto inserted = worker_entry.insert(object_id);
       if (inserted.second) {
         // Get the ID of the task that creates the dependency.
+        // TODO(qwang): Refine here to:
+        // if (object_id.CreatedByTask()) {// ...}
         TaskID creating_task_id = object_id.TaskId();
-        auto it = required_tasks_[creating_task_id].find(object_id);
-        if (it == required_tasks_[creating_task_id].end()) {
-          it = required_tasks_[creating_task_id]
-                   .emplace(object_id, ObjectDependencies(object))
-                   .first;
-        }
         // Add the subscribed worker to the mapping from object ID to list of
         // dependent workers.
-        it->second.dependent_workers.insert(worker_id);
+        required_tasks_[creating_task_id][object_id].dependent_workers.insert(worker_id);
       }
     }
   }
 
   // These dependencies are required by the given worker. Try to make them
   // local if necessary.
-  for (const auto &object : required_objects) {
-    const auto &object_id = ObjectID::FromBinary(object.object_id());
+  for (const auto &object_id : required_objects) {
     HandleRemoteDependencyRequired(object_id);
   }
 }
@@ -268,12 +252,11 @@ bool TaskDependencyManager::UnsubscribeGetDependencies(const TaskID &task_id) {
     auto creating_task_entry = required_tasks_.find(creating_task_id);
     // Remove the task from the list of tasks that are dependent on this
     // object.
-    auto it = creating_task_entry->second.find(object_id);
-    RAY_CHECK(it != creating_task_entry->second.end());
-    RAY_CHECK(it->second.dependent_tasks.erase(task_id) > 0);
+    auto &dependent_tasks = creating_task_entry->second[object_id].dependent_tasks;
+    RAY_CHECK(dependent_tasks.erase(task_id) > 0);
     // If nothing else depends on the object, then erase the object entry.
-    if (it->second.Empty()) {
-      creating_task_entry->second.erase(it);
+    if (creating_task_entry->second[object_id].Empty()) {
+      creating_task_entry->second.erase(object_id);
       // Remove the task that creates this object if there are no more object
       // dependencies created by the task.
       if (creating_task_entry->second.empty()) {
@@ -308,12 +291,11 @@ void TaskDependencyManager::UnsubscribeWaitDependencies(const WorkerID &worker_i
     auto creating_task_entry = required_tasks_.find(creating_task_id);
     // Remove the worker from the list of workers that are dependent on this
     // object.
-    auto it = creating_task_entry->second.find(object_id);
-    RAY_CHECK(it != creating_task_entry->second.end());
-    RAY_CHECK(it->second.dependent_workers.erase(worker_id) > 0);
+    auto &dependent_workers = creating_task_entry->second[object_id].dependent_workers;
+    RAY_CHECK(dependent_workers.erase(worker_id) > 0);
     // If nothing else depends on the object, then erase the object entry.
-    if (it->second.Empty()) {
-      creating_task_entry->second.erase(it);
+    if (creating_task_entry->second[object_id].Empty()) {
+      creating_task_entry->second.erase(object_id);
       // Remove the task that creates this object if there are no more object
       // dependencies created by the task.
       if (creating_task_entry->second.empty()) {
@@ -511,22 +493,6 @@ void TaskDependencyManager::RecordMetrics() const {
       local_objects_.size(), {{stats::ValueTypeKey, "num_local_objects"}});
   stats::TaskDependencyManagerStats().Record(
       pending_tasks_.size(), {{stats::ValueTypeKey, "num_pending_tasks"}});
-}
-
-bool TaskDependencyManager::GetOwnerAddress(const ObjectID &object_id,
-                                            rpc::Address *owner_address) const {
-  const auto creating_task_entry = required_tasks_.find(object_id.TaskId());
-  if (creating_task_entry == required_tasks_.end()) {
-    return false;
-  }
-
-  const auto it = creating_task_entry->second.find(object_id);
-  if (it == creating_task_entry->second.end()) {
-    return false;
-  }
-
-  *owner_address = it->second.owner_address;
-  return !owner_address->worker_id().empty();
 }
 
 }  // namespace raylet

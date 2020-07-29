@@ -25,39 +25,39 @@ Summary
    * - :ref:`AxSearch <tune-ax>`
      - Bayesian/Bandit Optimization
      - [`Ax <https://ax.dev/>`__]
-     - :doc:`/tune/examples/ax_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/ax_example.py>`__
    * - :ref:`DragonflySearch <Dragonfly>`
      - Scalable Bayesian Optimization
      - [`Dragonfly <https://dragonfly-opt.readthedocs.io/>`__]
-     - :doc:`/tune/examples/dragonfly_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/dragonfly_example.py>`__
    * - :ref:`SkoptSearch <skopt>`
      - Bayesian Optimization
      - [`Scikit-Optimize <https://scikit-optimize.github.io>`__]
-     - :doc:`/tune/examples/skopt_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/skopt_example.py>`__
    * - :ref:`HyperOptSearch <tune-hyperopt>`
      - Tree-Parzen Estimators
      - [`HyperOpt <http://hyperopt.github.io/hyperopt>`__]
-     - :doc:`/tune/examples/hyperopt_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/hyperopt_example.py>`__
    * - :ref:`BayesOptSearch <bayesopt>`
      - Bayesian Optimization
      - [`BayesianOptimization <https://github.com/fmfn/BayesianOptimization>`__]
-     - :doc:`/tune/examples/bayesopt_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/bayesopt_example.py>`__
    * - :ref:`TuneBOHB <suggest-TuneBOHB>`
      - Bayesian Opt/HyperBand
      - [`BOHB <https://github.com/automl/HpBandSter>`__]
-     - :doc:`/tune/examples/bohb_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/bohb_example.py>`__
    * - :ref:`NevergradSearch <nevergrad>`
      - Gradient-free Optimization
      - [`Nevergrad <https://github.com/facebookresearch/nevergrad>`__]
-     - :doc:`/tune/examples/nevergrad_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/nevergrad_example.py>`__
    * - :ref:`ZOOptSearch <zoopt>`
      - Zeroth-order Optimization
      - [`ZOOpt <https://github.com/polixir/ZOOpt>`__]
-     - :doc:`/tune/examples/zoopt_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/zoopt_example.py>`__
    * - :ref:`SigOptSearch <sigopt>`
      - Closed source
      - [`SigOpt <https://sigopt.com/>`__]
-     - :doc:`/tune/examples/sigopt_example`
+     - `Link <https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/sigopt_example.py>`__
 
 
 .. note::Search algorithms will require a different search space declaration than the default Tune format - meaning that you will not be able to combine ``tune.grid_search`` with the below integrations.

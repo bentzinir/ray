@@ -7,7 +7,7 @@ from ray.rllib.models.torch.recurrent_net import RecurrentNetwork as TorchRNN
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.framework import try_import_tf, try_import_torch
 
-tf1, tf, tfv = try_import_tf()
+tf = try_import_tf()
 torch, nn = try_import_torch()
 
 
@@ -75,7 +75,7 @@ class RNNModel(RecurrentNetwork):
         return tf.reshape(self._value_out, [-1])
 
 
-class TorchRNNModel(TorchRNN, nn.Module):
+class TorchRNNModel(TorchRNN):
     def __init__(self,
                  obs_space,
                  action_space,
@@ -84,7 +84,6 @@ class TorchRNNModel(TorchRNN, nn.Module):
                  name,
                  fc_size=64,
                  lstm_state_size=256):
-        nn.Module.__init__(self)
         super().__init__(obs_space, action_space, num_outputs, model_config,
                          name)
 

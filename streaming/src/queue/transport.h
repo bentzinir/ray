@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _STREAMING_QUEUE_TRANSPORT_H_
+#define _STREAMING_QUEUE_TRANSPORT_H_
 
 #include "ray/common/id.h"
 #include "ray/core_worker/core_worker.h"
@@ -65,3 +66,4 @@ class Transport {
 };
 }  // namespace streaming
 }  // namespace ray
+#endif

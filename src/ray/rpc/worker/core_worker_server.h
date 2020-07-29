@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#ifndef RAY_RPC_CORE_WORKER_SERVER_H
+#define RAY_RPC_CORE_WORKER_SERVER_H
 
+#include "ray/protobuf/core_worker.grpc.pb.h"
+#include "ray/protobuf/core_worker.pb.h"
 #include "ray/rpc/grpc_server.h"
 #include "ray/rpc/server_call.h"
-#include "src/ray/protobuf/core_worker.grpc.pb.h"
-#include "src/ray/protobuf/core_worker.pb.h"
 
 namespace ray {
 
@@ -59,7 +60,6 @@ namespace rpc {
 /// Interface of the `CoreWorkerServiceHandler`, see `src/ray/protobuf/core_worker.proto`.
 class CoreWorkerServiceHandler {
  public:
-  virtual ~CoreWorkerServiceHandler() {}
   /// Handlers. For all of the following handlers, the implementations can
   /// handle the request asynchronously. When handling is done, the
   /// `send_reply_callback` should be called. See
@@ -103,3 +103,5 @@ class CoreWorkerGrpcService : public GrpcService {
 
 }  // namespace rpc
 }  // namespace ray
+
+#endif  // RAY_RPC_CORE_WORKER_SERVER_H

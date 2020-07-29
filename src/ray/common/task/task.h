@@ -1,4 +1,5 @@
-#pragma once
+#ifndef RAY_COMMON_TASK_TASK_H
+#define RAY_COMMON_TASK_TASK_H
 
 #include <inttypes.h>
 
@@ -80,7 +81,7 @@ class Task {
   /// arguments and the mutable execution dependencies.
   ///
   /// \return The object dependencies.
-  const std::vector<rpc::ObjectReference> &GetDependencies() const;
+  const std::vector<ObjectID> &GetDependencies() const;
 
   /// Update the dynamic/mutable information for this task.
   /// \param task Task structure with updated dynamic information.
@@ -110,7 +111,7 @@ class Task {
   /// A cached copy of the task's object dependencies, including arguments from
   /// the TaskSpecification and execution dependencies from the
   /// TaskExecutionSpecification.
-  std::vector<rpc::ObjectReference> dependencies_;
+  std::vector<ObjectID> dependencies_;
 
   /// For direct task calls, overrides the dispatch behaviour to send an RPC
   /// back to the submitting worker.
@@ -124,3 +125,5 @@ class Task {
 };
 
 }  // namespace ray
+
+#endif  // RAY_COMMON_TASK_TASK_H

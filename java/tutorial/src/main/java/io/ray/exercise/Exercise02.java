@@ -28,10 +28,10 @@ public class Exercise02 {
   }
 
   public static String sayHelloWorld() {
-    ObjectRef<String> hello = Ray.task(Exercise02::sayHello).remote();
-    ObjectRef<String> world = Ray.task(Exercise02::sayWorld).remote();
+    ObjectRef<String> hello = Ray.call(Exercise02::sayHello);
+    ObjectRef<String> world = Ray.call(Exercise02::sayWorld);
     // Pass unfinished results as the parameters to another remote function.
-    return Ray.task(Exercise02::merge, hello, world).remote().get();
+    return Ray.call(Exercise02::merge, hello, world).get();
   }
 
   public static void main(String[] args) throws Exception {

@@ -1,5 +1,3 @@
-.. _serialization-guide:
-
 Serialization
 =============
 
@@ -47,7 +45,7 @@ Serialization notes
     l.append(l)
 
     # Try to put this list that recursively contains itself in the object store.
-    ray.put(l)  # ok
+    ray.put(l)  # ok 
 
 - For non-native objects, Ray will always keep a single copy even it is referred multiple times in an object:
 
@@ -65,7 +63,12 @@ Serialization notes
 Last resort: Custom Serialization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-If none of these options work, you can try registering a custom serializer with ``ray.register_custom_serializer`` (:ref:`docstring <ray-register_custom_serializer-ref>`):
+If none of these options work, you can try registering a custom serializer.
+
+.. autofunction:: ray.register_custom_serializer
+  :noindex:
+
+Below is an example of using ``ray.register_custom_serializer``:
 
 .. code-block:: python
 
@@ -88,8 +91,8 @@ If none of these options work, you can try registering a custom serializer with 
       ray.register_custom_serializer(
           Foo, serializer=custom_serializer, deserializer=custom_deserializer)
 
-      object_ref = ray.put(Foo(100))
-      assert ray.get(object_ref).value == 100
+      object_id = ray.put(Foo(100))
+      assert ray.get(object_id).value == 100
 
 
 If you find cases where Ray serialization doesn't work or does something unexpected, please `let us know`_ so we can fix it.

@@ -36,10 +36,7 @@ class BackendConfig:
             # timeout is default zero seconds, then we keep the existing
             # behavior to allow at most max batch size queries.
             if self.is_blocking and self.batch_wait_timeout == 0:
-                if self.max_batch_size:
-                    self.max_concurrent_queries = 2 * self.max_batch_size
-                else:
-                    self.max_concurrent_queries = 8
+                self.max_concurrent_queries = self.max_batch_size or 1
 
             # Pipeline/async mode: if the servable is not blocking,
             # router should just keep pushing queries to the worker
@@ -68,9 +65,6 @@ class BackendConfig:
             self.num_replicas = config_dict.pop("num_replicas")
         if "max_batch_size" in config_dict:
             self.max_batch_size = config_dict.pop("max_batch_size")
-        if "max_concurrent_queries" in config_dict:
-            self.max_concurrent_queries = config_dict.pop(
-                "max_concurrent_queries")
 
         if len(config_dict) != 0:
             raise ValueError("Unknown options in backend config: {}".format(
@@ -110,7 +104,6 @@ class ReplicaConfig:
         else:
             self.ray_actor_options = ray_actor_options
 
-        self.resource_dict = {}
         self._validate()
 
     def _validate(self):
@@ -142,7 +135,6 @@ class ReplicaConfig:
                     "num_cpus in ray_actor_options must be an int or a float.")
             elif num_cpus < 0:
                 raise ValueError("num_cpus in ray_actor_options must be >= 0.")
-            self.resource_dict["CPU"] = num_cpus
 
             num_gpus = self.ray_actor_options.get("num_gpus", 0)
             if not isinstance(num_gpus, (int, float)):
@@ -150,7 +142,6 @@ class ReplicaConfig:
                     "num_gpus in ray_actor_options must be an int or a float.")
             elif num_gpus < 0:
                 raise ValueError("num_gpus in ray_actor_options must be >= 0.")
-            self.resource_dict["GPU"] = num_gpus
 
             memory = self.ray_actor_options.get("memory", 0)
             if not isinstance(memory, (int, float)):
@@ -158,7 +149,6 @@ class ReplicaConfig:
                     "memory in ray_actor_options must be an int or a float.")
             elif memory < 0:
                 raise ValueError("num_gpus in ray_actor_options must be >= 0.")
-            self.resource_dict["memory"] = memory
 
             object_store_memory = self.ray_actor_options.get(
                 "object_store_memory", 0)
@@ -169,10 +159,8 @@ class ReplicaConfig:
             elif object_store_memory < 0:
                 raise ValueError(
                     "object_store_memory in ray_actor_options must be >= 0.")
-            self.resource_dict["object_store_memory"] = object_store_memory
 
-            custom_resources = self.ray_actor_options.get("resources", {})
-            if not isinstance(custom_resources, dict):
+            if not isinstance(
+                    self.ray_actor_options.get("resources", {}), dict):
                 raise TypeError(
                     "resources in ray_actor_options must be a dictionary.")
-            self.resource_dict.update(custom_resources)

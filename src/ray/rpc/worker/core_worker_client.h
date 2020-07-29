@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
-
-#ifdef __clang__
-// TODO(mehrdadn): Remove this when the warnings are addressed
-#pragma clang diagnostic push
-#pragma clang diagnostic warning "-Wunused-result"
-#endif
+#ifndef RAY_RPC_CORE_WORKER_CLIENT_H
+#define RAY_RPC_CORE_WORKER_CLIENT_H
 
 #include <grpcpp/grpcpp.h>
 
@@ -30,10 +25,10 @@
 #include "absl/base/thread_annotations.h"
 #include "absl/hash/hash.h"
 #include "ray/common/status.h"
+#include "ray/protobuf/core_worker.grpc.pb.h"
+#include "ray/protobuf/core_worker.pb.h"
 #include "ray/rpc/grpc_client.h"
 #include "ray/util/logging.h"
-#include "src/ray/protobuf/core_worker.grpc.pb.h"
-#include "src/ray/protobuf/core_worker.pb.h"
 
 namespace ray {
 namespace rpc {
@@ -219,7 +214,7 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
   /// \param[in] port Port of the worker server.
   /// \param[in] client_call_manager The `ClientCallManager` used for managing requests.
   CoreWorkerClient(const rpc::Address &address, ClientCallManager &client_call_manager)
-      : addr_(address) {
+      : addr_(address), client_call_manager_(client_call_manager) {
     grpc_client_ =
         std::unique_ptr<GrpcClient<CoreWorkerService>>(new GrpcClient<CoreWorkerService>(
             addr_.ip_address(), addr_.port(), client_call_manager));
@@ -264,7 +259,7 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
     }
 
     {
-      absl::MutexLock lock(&mutex_);
+      std::lock_guard<std::mutex> lock(mutex_);
       send_queue_.push_back(std::make_pair(std::move(request), callback));
     }
     SendRequests();
@@ -284,7 +279,7 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
   /// sent at once. This prevents the server scheduling queue from being overwhelmed.
   /// See direct_actor.proto for a description of the ordering protocol.
   void SendRequests() {
-    absl::MutexLock lock(&mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     auto this_ptr = this->shared_from_this();
 
     while (!send_queue_.empty() && rpc_bytes_in_flight_ < kMaxBytesInFlight) {
@@ -301,7 +296,7 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
       auto rpc_callback = [this, this_ptr, seq_no, task_size, callback](
                               Status status, const rpc::PushTaskReply &reply) {
         {
-          absl::MutexLock lock(&mutex_);
+          std::lock_guard<std::mutex> lock(mutex_);
           if (seq_no > max_finished_seq_no_) {
             max_finished_seq_no_ = seq_no;
           }
@@ -312,8 +307,7 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
         callback(status, reply);
       };
 
-      RAY_UNUSED(INVOKE_RPC_CALL(CoreWorkerService, PushTask, *request, rpc_callback,
-                                 grpc_client_));
+      INVOKE_RPC_CALL(CoreWorkerService, PushTask, *request, rpc_callback, grpc_client_);
     }
 
     if (!send_queue_.empty()) {
@@ -323,13 +317,16 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
 
  private:
   /// Protects against unsafe concurrent access from the callback thread.
-  absl::Mutex mutex_;
+  std::mutex mutex_;
 
   /// Address of the remote worker.
   rpc::Address addr_;
 
   /// The RPC client.
   std::unique_ptr<GrpcClient<CoreWorkerService>> grpc_client_;
+
+  /// The `ClientCallManager` used for managing requests.
+  ClientCallManager &client_call_manager_;
 
   /// Queue of requests to send.
   std::deque<std::pair<std::unique_ptr<PushTaskRequest>, ClientCallback<PushTaskReply>>>
@@ -345,6 +342,4 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
 }  // namespace rpc
 }  // namespace ray
 
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
+#endif  // RAY_RPC_CORE_WORKER_CLIENT_H

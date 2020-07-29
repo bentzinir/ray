@@ -36,7 +36,7 @@ Wrap your training with this:
         })
 
 
-Then, start a :ref:`Ray cluster <cluster-index>`.
+Then, start a Ray cluster `via autoscaler <autoscaling.html>`_ or `manually <using-ray-on-a-cluster.html>`_.
 
 .. code-block:: bash
 

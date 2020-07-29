@@ -1,11 +1,8 @@
 from six.moves import queue
-import gym
 import threading
 import uuid
-from typing import Optional
 
 from ray.rllib.utils.annotations import PublicAPI
-from ray.rllib.utils.types import EnvActionType, EnvObsType, EnvInfoDict
 
 
 @PublicAPI
@@ -39,10 +36,7 @@ class ExternalEnv(threading.Thread):
     """
 
     @PublicAPI
-    def __init__(self,
-                 action_space: gym.Space,
-                 observation_space: gym.Space,
-                 max_concurrent: int = 100):
+    def __init__(self, action_space, observation_space, max_concurrent=100):
         """Initializes an external env.
 
         Args:
@@ -80,9 +74,7 @@ class ExternalEnv(threading.Thread):
         raise NotImplementedError
 
     @PublicAPI
-    def start_episode(self,
-                      episode_id: Optional[str] = None,
-                      training_enabled: bool = True) -> str:
+    def start_episode(self, episode_id=None, training_enabled=True):
         """Record the start of an episode.
 
         Args:
@@ -112,8 +104,7 @@ class ExternalEnv(threading.Thread):
         return episode_id
 
     @PublicAPI
-    def get_action(self, episode_id: str,
-                   observation: EnvObsType) -> EnvActionType:
+    def get_action(self, episode_id, observation):
         """Record an observation and get the on-policy action.
 
         Args:
@@ -128,8 +119,7 @@ class ExternalEnv(threading.Thread):
         return episode.wait_for_action(observation)
 
     @PublicAPI
-    def log_action(self, episode_id: str, observation: EnvObsType,
-                   action: EnvActionType) -> None:
+    def log_action(self, episode_id, observation, action):
         """Record an observation and (off-policy) action taken.
 
         Args:
@@ -142,10 +132,7 @@ class ExternalEnv(threading.Thread):
         episode.log_action(observation, action)
 
     @PublicAPI
-    def log_returns(self,
-                    episode_id: str,
-                    reward: float,
-                    info: EnvInfoDict = None) -> None:
+    def log_returns(self, episode_id, reward, info=None):
         """Record returns from the environment.
 
         The reward will be attributed to the previous action taken by the
@@ -165,7 +152,7 @@ class ExternalEnv(threading.Thread):
             episode.cur_info = info or {}
 
     @PublicAPI
-    def end_episode(self, episode_id: str, observation: EnvObsType) -> None:
+    def end_episode(self, episode_id, observation):
         """Record the end of an episode.
 
         Args:
@@ -177,7 +164,7 @@ class ExternalEnv(threading.Thread):
         self._finished.add(episode.episode_id)
         episode.done(observation)
 
-    def _get(self, episode_id: str) -> "_ExternalEnvEpisode":
+    def _get(self, episode_id):
         """Get a started episode or raise an error."""
 
         if episode_id in self._finished:
@@ -194,10 +181,10 @@ class _ExternalEnvEpisode:
     """Tracked state for each active episode."""
 
     def __init__(self,
-                 episode_id: str,
-                 results_avail_condition: threading.Condition,
-                 training_enabled: bool,
-                 multiagent: bool = False):
+                 episode_id,
+                 results_avail_condition,
+                 training_enabled,
+                 multiagent=False):
         self.episode_id = episode_id
         self.results_avail_condition = results_avail_condition
         self.training_enabled = training_enabled

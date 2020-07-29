@@ -1,5 +1,5 @@
-#pragma once
-
+#ifndef RAY_STREAMING_H
+#define RAY_STREAMING_H
 #include <string>
 
 #include "config/streaming_config.h"
@@ -38,3 +38,5 @@ class RuntimeContext {
 
 }  // namespace streaming
 }  // namespace ray
+
+#endif  // RAY_STREAMING_H

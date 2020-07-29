@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,14 +30,14 @@ public class DataReader {
    * @param workerConfig  configuration
    */
   public DataReader(List<String> inputChannels,
-                    List<BaseActorHandle> fromActors,
+                    Map<String, BaseActorHandle> fromActors,
                     StreamingWorkerConfig workerConfig) {
     Preconditions.checkArgument(inputChannels.size() > 0);
     Preconditions.checkArgument(inputChannels.size() == fromActors.size());
     ChannelCreationParametersBuilder initialParameters =
         new ChannelCreationParametersBuilder().buildInputQueueParameters(inputChannels, fromActors);
     byte[][] inputChannelsBytes = inputChannels.stream()
-        .map(ChannelId::idStrToBytes).toArray(byte[][]::new);
+        .map(ChannelID::idStrToBytes).toArray(byte[][]::new);
     long[] seqIds = new long[inputChannels.size()];
     long[] msgIds = new long[inputChannels.size()];
     for (int i = 0; i < inputChannels.size(); i++) {
@@ -226,9 +227,9 @@ public class DataReader {
     }
 
     private String getQidString(ByteBuffer buffer) {
-      byte[] bytes = new byte[ChannelId.ID_LENGTH];
+      byte[] bytes = new byte[ChannelID.ID_LENGTH];
       buffer.get(bytes);
-      return ChannelId.idBytesToStr(bytes);
+      return ChannelID.idBytesToStr(bytes);
     }
 
     public int getMagicNum() {

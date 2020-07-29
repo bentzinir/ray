@@ -12,13 +12,7 @@ try:
                                                   BaseTorchTrainable)
 
     from ray.util.sgd.torch.training_operator import TrainingOperator
-    from ray.util.sgd.torch.func_trainable import (DistributedTrainableCreator,
-                                                   distributed_checkpoint)
 
-    __all__ = [
-        "TorchTrainer", "BaseTorchTrainable", "TrainingOperator",
-        "distributed_checkpoint", "DistributedTrainableCreator"
-    ]
-except ImportError as e:
-    logger.warning(e)
+    __all__ = ["TorchTrainer", "BaseTorchTrainable", "TrainingOperator"]
+except ImportError:
     logger.warning("PyTorch not found. TorchTrainer will not be available")

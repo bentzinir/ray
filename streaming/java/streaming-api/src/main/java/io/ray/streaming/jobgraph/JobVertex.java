@@ -10,7 +10,6 @@ import java.util.Map;
  * Job vertex is a cell node where logic is executed.
  */
 public class JobVertex implements Serializable {
-
   private int vertexId;
   private int parallelism;
   private VertexType vertexType;
@@ -21,14 +20,12 @@ public class JobVertex implements Serializable {
   public JobVertex(int vertexId,
                    int parallelism,
                    VertexType vertexType,
-                   StreamOperator streamOperator,
-                   Map<String, String> config) {
+                   StreamOperator streamOperator) {
     this.vertexId = vertexId;
     this.parallelism = parallelism;
     this.vertexType = vertexType;
     this.streamOperator = streamOperator;
     this.language = streamOperator.getLanguage();
-    this.config = config;
   }
 
   public int getVertexId() {
@@ -70,5 +67,4 @@ public class JobVertex implements Serializable {
         .add("config", config)
         .toString();
   }
-
 }
