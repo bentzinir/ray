@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef PLASMA_EVICTION_POLICY_H
-#define PLASMA_EVICTION_POLICY_H
+#pragma once
 
 #include <functional>
 #include <list>
@@ -29,6 +28,8 @@
 #include "ray/object_manager/plasma/plasma.h"
 
 namespace plasma {
+
+class Client;
 
 // ==== The eviction policy ====
 //
@@ -208,5 +209,3 @@ class EvictionPolicy {
 };
 
 }  // namespace plasma
-
-#endif  // PLASMA_EVICTION_POLICY_H
