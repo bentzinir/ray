@@ -51,6 +51,12 @@ install_base() {
 }
 
 install_miniconda() {
+  if [ "${OSTYPE}" = msys ]; then
+    # Windows is on GitHub Actions, whose built-in Python installations we added direct support for.
+    python --version
+    return 0
+  fi
+
   local conda="${CONDA_EXE-}"  # Try to get the activated conda executable
 
   if [ -z "${conda}" ]; then  # If no conda is found, try to find it in PATH
@@ -92,6 +98,15 @@ install_miniconda() {
         # Unfortunately it inhibits PATH modifications as a side effect.
         "${WORKSPACE_DIR}"/ci/suppress_output "${miniconda_target}" -f -b -p "${miniconda_dir}"
         conda="${miniconda_dir}/bin/conda"
+        ;;
+    esac
+  else
+    case "${OSTYPE}" in
+      darwin*)
+        # When 'conda' is preinstalled on Mac (as on GitHub Actions), it uses this directory
+        local miniconda_dir="/usr/local/miniconda"
+        sudo mkdir -p -- "${miniconda_dir}"
+        sudo chown -R "${USER}" "${miniconda_dir}"
         ;;
     esac
   fi
@@ -144,7 +159,7 @@ install_nvm() {
       )
       printf "%s\n" \
         "export NVM_HOME=\"$(cygpath -w -- "${NVM_HOME}")\"" \
-        'nvm() { "${NVM_HOME}/nvm.exe" "$@"; }' \
+        "nvm() { \"\${NVM_HOME}/nvm.exe\" \"\$@\"; }" \
         > "${NVM_HOME}/nvm.sh"
     fi
   else
@@ -162,7 +177,7 @@ install_pip() {
     "${python}" -m pip install --upgrade --quiet pip
 
     # If we're in a CI environment, do some configuration
-    if [ "${TRAVIS-}" = true ] || [ -n "${GITHUB_WORKFLOW-}" ]; then
+    if [ "${CI-}" = true ]; then
       "${python}" -W ignore -m pip config -q --user set global.disable-pip-version-check True
       "${python}" -W ignore -m pip config -q --user set global.no-color True
       "${python}" -W ignore -m pip config -q --user set global.progress_bar off
@@ -193,6 +208,7 @@ install_toolchains() {
 install_dependencies() {
 
   install_bazel
+
   install_base
   install_toolchains
   install_nvm
@@ -220,10 +236,10 @@ install_dependencies() {
       *) tf_version="${TF_VERSION:-2.1.0}";;
     esac
     pip_packages+=(scipy tensorflow=="${tf_version}" cython==0.29.0 gym \
-      opencv-python-headless pyyaml pandas==0.24.2 requests feather-format lxml openpyxl xlrd \
+      opencv-python-headless pyyaml pandas==1.0.5 requests feather-format lxml openpyxl xlrd \
       py-spy pytest pytest-timeout networkx tabulate aiohttp uvicorn dataclasses pygments werkzeug \
       kubernetes flask grpcio pytest-sugar pytest-rerunfailures pytest-asyncio scikit-learn==0.22.2 numba \
-      Pillow prometheus_client boto3)
+      Pillow prometheus_client boto3 pettingzoo mypy)
     if [ "${OSTYPE}" != msys ]; then
       # These packages aren't Windows-compatible
       pip_packages+=(blist)  # https://github.com/DanielStutzbach/blist/issues/81#issue-391460716
@@ -234,8 +250,7 @@ install_dependencies() {
     # after n seconds.
     local status="0";
     local errmsg="";
-    for i in {1..3};
-    do
+    for _ in {1..3}; do
       errmsg=$(CC=gcc pip install "${pip_packages[@]}" 2>&1) && break;
       status=$errmsg && echo "'pip install ...' failed, will retry after n seconds!" && sleep 30;
     done
@@ -261,7 +276,28 @@ install_dependencies() {
   # Additional RLlib dependencies.
   if [ "${RLLIB_TESTING-}" = 1 ]; then
     pip install tensorflow-probability=="${TFP_VERSION-0.8}" gast==0.2.2 \
+      torch=="${TORCH_VERSION-1.4}" torchvision atari_py "gym[atari]" lz4 smart_open
+  fi
+
+  # Additional Tune test dependencies.
+  if [ "${TUNE_TESTING-}" = 1 ]; then
+    pip install tensorflow-probability=="${TFP_VERSION-0.8}" \
+      torch=="${TORCH_VERSION-1.4}"
+    pip install -r "${WORKSPACE_DIR}"/docker/tune_test/requirements.txt
+  fi
+
+  # Additional RaySGD test dependencies.
+  if [ "${SGD_TESTING-}" = 1 ]; then
+    pip install tensorflow-probability=="${TFP_VERSION-0.8}" \
+      torch=="${TORCH_VERSION-1.4}"
+    pip install -r "${WORKSPACE_DIR}"/docker/tune_test/requirements.txt
+  fi
+
+  # Additional Doc test dependencies.
+  if [ "${DOC_TESTING-}" = 1 ]; then
+    pip install tensorflow-probability=="${TFP_VERSION-0.8}" \
       torch=="${TORCH_VERSION-1.4}" torchvision atari_py gym[atari] lz4 smart_open
+    pip install -r "${WORKSPACE_DIR}"/docker/tune_test/requirements.txt
   fi
 
   # Additional streaming dependencies.

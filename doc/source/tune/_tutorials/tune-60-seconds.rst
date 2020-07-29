@@ -35,20 +35,20 @@ Here's an example of specifying the objective function using :ref:`the function-
 
 Now, there's two Trainable APIs - one being the :ref:`function-based API <tune-function-api>` that we demonstrated above.
 
-The other is a :ref:`class-based API <tune-class-api>` that enables :ref:`checkpointing and pausing <tune-trainable-save-restore>`. Here's an example of specifying the objective function using the :ref:`class-based API <tune-class-api>`:
+The other is a :ref:`class-based API <tune-class-api>`. Here's an example of specifying the objective function using the :ref:`class-based API <tune-class-api>`:
 
 .. code-block:: python
 
     from ray import tune
 
     class Trainable(tune.Trainable):
-        def _setup(self, config):
+        def setup(self, config):
             # config (dict): A dict of hyperparameters
             self.x = 0
             self.a = config["a"]
             self.b = config["b"]
 
-        def _train(self):  # This is called iteratively.
+        def step(self):  # This is called iteratively.
             score = objective(self.x, self.a, self.b)
             self.x += 1
             return {"score": score}
