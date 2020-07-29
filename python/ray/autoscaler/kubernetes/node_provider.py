@@ -2,6 +2,7 @@ import logging
 
 from ray.autoscaler.kubernetes import core_api, log_prefix
 from ray.autoscaler.node_provider import NodeProvider
+from ray.autoscaler.kubernetes.config import bootstrap_kubernetes
 from ray.autoscaler.tags import TAG_RAY_CLUSTER_NAME
 from ray.autoscaler.updater import KubernetesCommandRunner
 
@@ -87,7 +88,17 @@ class KubernetesNodeProvider(NodeProvider):
         for node_id in node_ids:
             self.terminate_node(node_id)
 
-    def get_command_runner(self, log_prefix, node_id, auth_config,
-                           cluster_name, process_runner, use_internal_ip):
+    def get_command_runner(self,
+                           log_prefix,
+                           node_id,
+                           auth_config,
+                           cluster_name,
+                           process_runner,
+                           use_internal_ip,
+                           docker_config=None):
         return KubernetesCommandRunner(log_prefix, self.namespace, node_id,
                                        auth_config, process_runner)
+
+    @staticmethod
+    def bootstrap_config(cluster_config):
+        return bootstrap_kubernetes(cluster_config)
