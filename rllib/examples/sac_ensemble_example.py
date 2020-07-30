@@ -62,8 +62,8 @@ def callback_builder():
                 episode.custom_metrics["num_batches"] = 0
             episode.custom_metrics["num_batches"] += 1
 
-        def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
-            samples['members'] = np.array([info['active_member'] for info in samples['infos']], dtype=np.int32)
+        # def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
+        #     samples['members'] = np.array([info['active_member'] for info in samples['infos']], dtype=np.int32)
 
         def on_episode_end(self, worker: RolloutWorker, base_env: BaseEnv,
                            policies: Dict[str, Policy], episode: MultiAgentEpisode,
@@ -86,7 +86,7 @@ if __name__ == "__main__":
             'env': args.env,
             'num_workers': args.num_workers,
             'num_gpus': args.num_gpus,
-            'partial_ensemble_size': tune.grid_search([1, 2, 3, 4, 5]) if args.ensemble_grid_search else args.ensemble_size,
+            'partial_ensemble_size': tune.grid_search([5, 4, 3, 2, 1]) if args.ensemble_grid_search else args.ensemble_size,
             'timescale': tune.grid_search([100, 1000, 10000, 50000]) if args.timescale_grid_search else args.timescale,
             'shared_actor': args.shared_actor,
             'framework': 'tfe' if args.tfe else 'tf',

@@ -1,6 +1,6 @@
 from gym.spaces import Box, MultiDiscrete
 import logging
-
+import numpy as np
 import ray
 import ray.experimental.tf_utils
 from ray.rllib.agents.ddpg.ddpg_tf_policy import ComputeTDErrorMixin, \
@@ -110,9 +110,11 @@ def postprocess_trajectory(policy,
                            sample_batch,
                            other_agent_batches=None,
                            episode=None):
-    import numpy as np
-    if 'members' not in sample_batch:
+    if 'infos' not in sample_batch:
         sample_batch['members'] = np.ones_like(sample_batch[SampleBatch.REWARDS]).astype(np.int32)
+        print("infos field not in sample_batch !!!")
+    else:
+        sample_batch['members'] = np.array([info['active_member'] for info in sample_batch['infos']], dtype=np.int32)
     return postprocess_nstep_and_prio(policy, sample_batch)
 
 
