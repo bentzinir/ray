@@ -16,6 +16,7 @@ class ActionMux(gym.Wrapper):
             self.action_space = gym.spaces.MultiDiscrete([self.action_space.n for _ in range(ensemble_size)])
         print(f"Ensemble size: {ensemble_size}, ActionMux Action_Space: {self.env.action_space}")
         self.ensemble_reward_ques = [deque(maxlen=1) for _ in range(ensemble_size)]
+        [reward_queue.append(0) for reward_queue in self.ensemble_reward_ques]
         self.active_member = np.random.choice(range(self.ensemble_size))
         self.episode_reward = 0
 
@@ -35,6 +36,10 @@ class ActionMux(gym.Wrapper):
         self.ensemble_reward_ques[self.active_member].append(self.episode_reward)
         self.episode_reward = 0
         self.active_member = np.random.choice(range(self.ensemble_size))
+        if hasattr(self.env, 'set_member'):
+            self.env.set_member(self.active_member)
+        # self.active_member = 1
+        # print(f"(ActionMux) member idx: {self.active_member}")
         return self.wrap_obs(obs)
 
     @property
