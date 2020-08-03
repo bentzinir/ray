@@ -40,6 +40,7 @@ def get_parser():
     parser.add_argument("--checkpoint_freq", type=int, default=0)
     return parser
 
+# gan ensemble commit health
 
 def callback_builder():
 
