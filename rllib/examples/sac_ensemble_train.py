@@ -34,6 +34,7 @@ def get_parser():
     parser.add_argument("--local_mode", action="store_true")
     parser.add_argument("--experience_masking", action="store_true")
     parser.add_argument("--alpha", type=float, default=None)
+    parser.add_argument("--beta", type=float, default=None)
     parser.add_argument("--alpha_grid_search", action="store_true")
     parser.add_argument("--local_dir", type=str, default="none")
     parser.add_argument("--checkpoint_dir", type=str, default=None)
@@ -99,6 +100,7 @@ def get_config(args):
         'experience_masking': args.experience_masking,
         'gamma': args.gamma,
         'alpha': tune.grid_search([0.4, 0.3, 0.2, 0.1]) if args.alpha_grid_search else args.alpha,
+        'beta': args.beta,
     }
 
 
