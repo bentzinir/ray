@@ -30,7 +30,7 @@ if __name__ == "__main__":
         state, reward, done, _ = env.step(action)
         cumulative_reward += reward
         env.render()
-        time.sleep(0.01)
+        time.sleep(0.001)
         if done:
             # print(cumulative_reward)
             cumulative_reward = 0
