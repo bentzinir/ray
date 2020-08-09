@@ -20,7 +20,6 @@ class ActionMux(gym.Wrapper):
         self.active_member = np.random.choice(range(self.ensemble_size))
         self.episode_reward = 0
 
-    # debug comment
     def wrap_obs(self, obs):
         return obs
 
