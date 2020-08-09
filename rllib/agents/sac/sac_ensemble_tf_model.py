@@ -31,9 +31,7 @@ class SACEnsembleTFModel(TFModelV2):
                  critic_hiddens=(256, 256),
                  twin_q=False,
                  initial_alpha=1.0,
-                 initial_beta=0.1,
                  alpha=None,
-                 beta=None,
                  target_entropy=None,
                  ensemble_size=1,
                  timescale=10000,
@@ -164,9 +162,6 @@ class SACEnsembleTFModel(TFModelV2):
             else:
                 # TODO: find the correct entropy value for the ensemble
                 target_entropy = -np.prod(action_space.shape[1:])
-
-        # TODO: debug
-        target_entropy = target_entropy / ensemble_size
         self.target_entropy = target_entropy
 
         if alpha is not None:
@@ -178,35 +173,12 @@ class SACEnsembleTFModel(TFModelV2):
         self.log_alpha = tf.Variable(
             np.log(initial_alpha), dtype=tf.float32, name="log_alpha")
         self.alpha = tf.exp(self.log_alpha)
-        self.register_variables([self.log_alpha])
+        # if alpha is not None:
+        #     self.register_variables([self.log_alpha])
 
         self.cntr = tf.Variable(0, dtype=tf.float32, name="counter")
         self.cntr_inc_op = tf1.assign_add(self.cntr, 1)
         self.flrd_cntr = tf.math.floormod(tf.floor(self.cntr/timescale), ensemble_size)
-
-        ###################################
-        # discriminator
-        d_net = tf.keras.Sequential([tf.keras.layers.Dense(
-            units=units,
-            activation=getattr(tf.nn, critic_hidden_activation, None),
-            name="d_hidden_{}".format(i))
-                                        for i, units in enumerate(critic_hiddens)
-                                    ] + [
-                                        tf.keras.layers.Dense(
-                                            units=ensemble_size, activation=None, name="d_out")
-                                    ])
-        self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
-        self.register_variables(self.d_net.variables)
-        if beta is not None:
-            initial_beta = beta
-            print("=================Constant Beta=================")
-        self.log_beta = tf.Variable(
-            np.log(initial_beta), dtype=tf.float32, name="log_beta")
-        self.beta = tf.exp(self.log_beta)
-        self.register_variables([self.log_beta])
-        # TODO: find a mechanism to auto-calculate target accuracy as a function of the ensemble size.
-        self.target_acc = 0.5
-        ###################################
 
     def get_q_values(self, model_out, actions=None, midx=None):
         """Return the Q estimates for the most recent forward pass.
@@ -282,9 +254,6 @@ class SACEnsembleTFModel(TFModelV2):
             policy_output_list = [self.action_model[eidx](model_out) for eidx in range(self.ensemble_size)]
             return tf.stack(policy_output_list, axis=1)
 
-    def get_d_values(self, model_out):
-        return self.d_net(model_out)
-
     def policy_variables(self, midx=None):
         """Return the list of variables for the policy net."""
 
@@ -295,10 +264,6 @@ class SACEnsembleTFModel(TFModelV2):
             for eidx in range(self.ensemble_size):
                 vars += self.action_model[eidx].variables
             return vars
-
-    def d_variables(self):
-        """Return the list of variables for the dicsrimination net."""
-        return self.d_net.variables
 
     def q_variables(self, midx=None):
         """Return the list of variables for Q / twin Q nets."""
