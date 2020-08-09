@@ -42,15 +42,15 @@ class MazeEnv(gym.Env):
         self.viewer = None
         self.h = len(self.map)
         self.w = len(self.map[0])
-        self.frame = 255 * np.ones((self.h, self.w, 3), dtype=np.uint8)
-
         self.bg = 255 * np.ones((self.h, self.w, 3), dtype=np.uint8)
         for ridx in range(self.h):
             for cidx in range(self.w):
                 if self.map[ridx][cidx] == "#":
                     self.bg[ridx, cidx, :] = [255, 0, 0]
-        self.frame = self.bg.copy()
+        self.bg[self.end_pos] = [0, 0, 255]
         self.member = None
+        self.member_list = []
+        self.frames = dict()
 
     def reset(self):
         # self.wind_direction = random.choice([0, 1, 2, 3])
@@ -70,7 +70,7 @@ class MazeEnv(gym.Env):
         if verbose:
             print(f"step: {self.num_steps}, pos: {self.pos}")
         return (np.array(self.pos),
-                1 * int(at_goal), done, {})
+                10 * int(at_goal), done, {})
 
     def _get_new_pos(self, pos, direction):
         if direction == 0:
@@ -89,22 +89,32 @@ class MazeEnv(gym.Env):
 
     def set_member(self, member):
         self.member = member
+        self.member_list = list(set(self.member_list + [member]))
+        self.member_list.sort()
 
     def member_color(self):
         if self.member == 0:
-            return [51, 255, 69]
+            return [255, 0, 0]  # red
         elif self.member == 1:
-            return [255, 190, 51]
+            return [255, 128, 0]  # orange
+        elif self.member == 2:
+            return [255, 255, 0]  # yellow
+        elif self.member == 3:
+            return [128, 255, 0]  # green
         else:
             raise ValueError
 
     def _get_image(self, alpha=0.995):
         frame_t = self.bg.copy()
-        frame_t[self.pos] = self.member_color()
+        frame_t[self.pos] =  [0, 255, 0] #self.member_color()
         # frame[self.end_pos] = [0, 0, 255]
-        # self.frame = (alpha * self.frame + (1 - alpha) * frame_t).astype(np.uint8)
-        self.frame[self.pos] = self.member_color()
-        return np.concatenate([frame_t, self.frame], axis=1)
+        if not self.member in self.frames:
+            self.frames[self.member] = self.bg.copy()
+
+        self.frames[self.member] = (alpha * self.frames[self.member] + (1 - alpha) * frame_t).astype(np.uint8)
+        # self.frame[self.pos] = self.member_color()
+        frames = [frame_t] + [self.frames[i] for i in self.member_list]
+        return np.concatenate(frames, axis=0)
 
     def render(self, mode='human'):
         img = self._get_image()
