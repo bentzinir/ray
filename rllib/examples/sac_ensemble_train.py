@@ -1,5 +1,4 @@
 import argparse
-import gym
 import ray
 from ray import tune
 from ray.rllib.agents.sac import SACEnsembleTrainer
