@@ -70,8 +70,17 @@ def callback_builder():
 
             return
 
-        # def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
-        #     samples['members'] = np.array([info['active_member'] for info in samples['infos']], dtype=np.int32)
+        def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
+            # samples['members'] = np.array([info['active_member'] for info in samples['infos']], dtype=np.int32)
+
+            for pol_name, pol_vals in samples.policy_batches.items():
+                pol_idx = int(pol_name.split('pol')[1])
+                members = np.array([info['active_member'] for info in pol_vals['infos']], dtype=np.int32)
+                for i, member in enumerate(members):
+                    if pol_idx > member:
+                        from ray.rllib.policy.sample_batch import SampleBatch
+                        for name, val in pol_vals.items():
+                            pol_vals[name] = []
 
         def on_episode_end(self, worker: RolloutWorker, base_env: BaseEnv,
                            policies: Dict[str, Policy], episode: MultiAgentEpisode,
@@ -138,7 +147,7 @@ def get_config(args):
             "policies": {
                 "pol0": (None, *make_env_get_spaces(args), {}),
                 "pol1": (None, *make_env_get_spaces(args), {}),
-                # "pol2": (None, *make_env_get_spaces(args), {}),
+                "pol2": (None, *make_env_get_spaces(args), {}),
             },
             "policy_mapping_fn": lambda x: f"pol{x}",
             # "observation_fn": central_critic_observer,
