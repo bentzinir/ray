@@ -25,7 +25,7 @@ class Ensemble(MultiAgentEnv, gym.Wrapper):
         done = {"__all__": done}
         info["active_member"] = self.active_member
 
-        dictionize = False
+        dictionize = True
         if dictionize:
             rewards = self._dictionize(reward / self.ensemble_size)
             observation = self._dictionize(observation)
@@ -44,7 +44,7 @@ class Ensemble(MultiAgentEnv, gym.Wrapper):
         return self._dictionize(obs)
 
     def _dictionize(self, val):
-        x = {}
-        for i in range(self.ensemble_size):
-            x[i] = val
+        # nan_val = np.nan * np.ones_like(val)
+        x = {k: val for k in list(range(self.ensemble_size))}
+        # x[self.active_member] = val
         return x

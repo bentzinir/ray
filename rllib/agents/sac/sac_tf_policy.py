@@ -85,18 +85,20 @@ def postprocess_trajectory(policy,
                            other_agent_batches=None,
                            episode=None):
 
-    if other_agent_batches is not None:
-        [(_, opponent_batch)] = list(other_agent_batches.values())
-
-        # also record the opponent obs and actions in the trajectory
-        sample_batch["opponent_obs"] = opponent_batch[SampleBatch.CUR_OBS]
-
-    else:
-        import numpy as np
-        # Policy hasn't been initialized yet, use zeros.
-        sample_batch["opponent_obs"] = np.zeros_like(
-            sample_batch[SampleBatch.CUR_OBS])
-
+    # if other_agent_batches is not None:
+    #     [(_, opponent_batch)] = list(other_agent_batches.values())
+    #
+    #     # also record the opponent obs and actions in the trajectory
+    #     sample_batch["opponent_obs"] = opponent_batch[SampleBatch.CUR_OBS]
+    #
+    # else:
+    #     import numpy as np
+    #     # Policy hasn't been initialized yet, use zeros.
+    #     sample_batch["opponent_obs"] = np.zeros_like(
+    #         sample_batch[SampleBatch.CUR_OBS])
+    import numpy as np
+    if np.any(np.isnan(sample_batch['obs'])):
+        a = 1
     return postprocess_nstep_and_prio(policy, sample_batch)
 
 
