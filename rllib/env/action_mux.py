@@ -29,6 +29,7 @@ class ActionMux(gym.Wrapper):
         self.episode_reward += reward
         info["ensemble_rewards"] = self.ensemble_rewards
         info["active_member"] = self.active_member
+        info["episode_reward"] = self.episode_reward
         return self.wrap_obs(observation), reward, done, info
 
     def reset(self, **kwargs):

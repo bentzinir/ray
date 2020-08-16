@@ -10,6 +10,8 @@ from ray.rllib.evaluation import MultiAgentEpisode, RolloutWorker
 from ray.rllib.env import BaseEnv
 from ray.rllib.policy import Policy
 from typing import Dict
+from ray.rllib.examples.env.multi_agent import make_multiagent
+import random
 
 
 def get_parser():
@@ -43,6 +45,22 @@ def get_parser():
     return parser
 
 
+def get_q_value(policy, batch):
+    if policy.loss_initialized():
+        model_out_t, _ = policy.model({
+                "obs": batch[SampleBatch.CUR_OBS],
+                "is_training": policy._get_is_training_placeholder(),
+            }, [], None)
+        actions = batch[SampleBatch.ACTIONS]
+        if policy.model.discrete:
+            qvec = policy.model.get_q_values(model_out_t)
+            return [q[a] for q, a in zip(qvec.numpy(), actions)]
+        else:
+            return policy.model.get_q_values(model_out_t, actions)
+    else:
+        return -np.inf * np.ones_like(batch[SampleBatch.REWARDS])
+
+
 def callback_builder():
 
     class MyCallbacks(DefaultCallbacks):
@@ -50,10 +68,7 @@ def callback_builder():
         def on_episode_start(self, worker: RolloutWorker, base_env: BaseEnv,
                              policies: Dict[str, Policy],
                              episode: MultiAgentEpisode, **kwargs):
-            ...
-            # episode.custom_metrics[f"max_reward"] = []
-            # for i in range(worker.env.ensemble_size):
-            #     episode.custom_metrics[f"reward_{i}"] = []
+            pass
 
         def on_episode_step(self, worker: RolloutWorker, base_env: BaseEnv,
                             episode: MultiAgentEpisode, **kwargs):
@@ -65,67 +80,52 @@ def callback_builder():
             postprocessed_batch: SampleBatch,
             original_batches: Dict[str, SampleBatch], **kwargs):
 
-            # postprocessed_batch['members'] = np.array([info['active_member'] for info in postprocessed_batch['infos']],
-            #                                           dtype=np.int32)
+            policy, _ = original_batches[agent_id]
 
+            masters = [okey for okey in original_batches.keys() if okey < agent_id]
+            if len(masters) > 0:
+                opp_index = random.choice(masters)
+                opolicy, obatch = original_batches[opp_index]
+                for i, (oobs, oinfo) in enumerate(zip(obatch["obs"], obatch["infos"])):
+                    if oinfo['my_id'] == opp_index:
+                        postprocessed_batch["opponent_obs"][i] = oobs.copy()
+                        postprocessed_batch["valid_opp_obs"][i] = True
+
+            slaves = [okey for okey in original_batches.keys() if okey > agent_id]
+            if len(slaves) > 0:
+                opp_index = random.choice(slaves)
+                opolicy, obatch = original_batches[opp_index]
+                # assert that original_batches keys are indeed agent_id
+                # TODO: this assertion may fail. replace with a logic that extracts individual samples
+                assert np.all([oinfo['my_id'] == opp_index for oinfo in obatch["infos"]])
+                own_qs = get_q_value(policy, obatch)
+                slave_qs = get_q_value(opolicy, obatch)
+                for i, (own_q, slave_q) in enumerate(zip(own_qs, slave_qs)):
+                    if slave_q > own_q:
+                        for key in obatch.keys():
+                            val = obatch[key][i].copy()
+                            if key == 'valid_opp_obs':
+                                val = False
+                            postprocessed_batch[key] = np.append(postprocessed_batch[key], [val], axis=0)
             return
 
         def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
-            # samples['members'] = np.array([info['active_member'] for info in samples['infos']], dtype=np.int32)
-
-            for pol_name, pol_vals in samples.policy_batches.items():
-                pol_idx = int(pol_name.split('pol')[1])
-                members = np.array([info['active_member'] for info in pol_vals['infos']], dtype=np.int32)
-                for i, member in enumerate(members):
-                    if pol_idx > member:
-                        from ray.rllib.policy.sample_batch import SampleBatch
-                        for name, val in pol_vals.items():
-                            pol_vals[name] = []
+            pass
 
         def on_episode_end(self, worker: RolloutWorker, base_env: BaseEnv,
                            policies: Dict[str, Policy], episode: MultiAgentEpisode,
                            **kwargs):
-            ...
-            # ensemble_rewards = episode.last_info_for()["ensemble_rewards"]
-            # episode.custom_metrics[f"max_reward"].append(np.max(ensemble_rewards))
-            # for i, ri in enumerate(ensemble_rewards):
-            #     episode.custom_metrics[f"reward_{i}"].append(ri)
+            # for policy_name in policies.keys():
+            #     policy_number = policy_name.split('_')[1]
+            #     episode.custom_metrics[f"reward_{policy_number}"] = episode.agent_rewards[policy_name]
+            pass
 
     return MyCallbacks
 
 
 def central_critic_observer(agent_obs, **kw):
     """Rewrites the agent obs to include opponent data for training."""
-
-    # new_obs = {
-    #     0: {
-    #         "own_obs": agent_obs[0],
-    #         "opponent_obs": agent_obs[1],
-    #     },
-    #     1: {
-    #         "own_obs": agent_obs[1],
-    #         "opponent_obs": agent_obs[0],
-    #     },
-    # }
-    new_obs = agent_obs
-    return new_obs
-
-
-def make_env_get_spaces(args):
-    from gym.spaces import Dict as gym_dict
-
-    if type(args.env) is str:
-        import gym
-        env = gym.make(args.env)
-    else:
-        env = args.env()
-
-    # observer_space = gym_dict({
-    #     "own_obs": env.observation_space,
-    #     "opponent_obs": env.observation_space,
-    # })
-
-    return env.observation_space, env.action_space
+    return agent_obs
 
 
 def get_config(args):
@@ -133,26 +133,44 @@ def get_config(args):
         batch_scale = args.ensemble_size
     else:
         batch_scale = 1
+
+    # Get obs- and action Spaces.
+    if isinstance(args.env, str):
+        single_env = gym.make(args.env)
+    else:
+        single_env = args.env()
+    # from gym.spaces import Dict
+    # obs_space = Dict({"own": single_env.observation_space})
+    obs_space = single_env.observation_space
+    act_space = single_env.action_space
+
+    policies = {
+        "policy_{}".format(i): (None, obs_space, act_space, {})
+        for i in range(args.ensemble_size)
+    }
+
     return {
-        'env': args.env,
+        'env': make_multiagent(args.env),
+        "env_config": {
+            "num_agents": args.ensemble_size,
+            "normalize_actions": True,
+            },
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
-        'framework': 'tfe' if args.tfe else 'tf',
+        'framework': 'tfe' if args.tfe else 'tf2',
         'target_entropy': args.target_entropy,
         "callbacks": callback_builder(),
         'train_batch_size': batch_scale * args.batch_size,
         'gamma': args.gamma,
         # 'alpha': tune.grid_search([0.4, 0.3, 0.2, 0.1]) if args.alpha_grid_search else args.alpha,
         "multiagent": {
-            "policies": {
-                "pol0": (None, *make_env_get_spaces(args), {}),
-                "pol1": (None, *make_env_get_spaces(args), {}),
-                "pol2": (None, *make_env_get_spaces(args), {}),
-            },
-            "policy_mapping_fn": lambda x: f"pol{x}",
-            # "observation_fn": central_critic_observer,
+            "policies": policies,
+            "policy_mapping_fn": (lambda x: f"policy_{x}"),
+            "observation_fn": central_critic_observer,
         },
-        'ensemble_size': args.ensemble_size
+        "normalize_actions": False,
+        "alpha": args.alpha,
+        "beta": args.beta,
     }
 
 
@@ -168,28 +186,19 @@ if __name__ == "__main__":
     args, extra_args = get_args()
 
     ray.init(num_cpus=args.num_cpus or None,
-             local_mode=args.local_mode,
-             # redis_max_memory=int(4e9),
-             # object_store_memory=int(10e9),
-             # memory=int(16e9)
-             )
+             local_mode=args.local_mode)
 
     if args.debug:
         trainer = SACTrainer(config=get_config(args))
         i = 0
         while True:
-            results = trainer.train()  # distributed training step
+            results = trainer.train()
             print(f"Iter: {results['training_iteration']}, R: {results['episode_reward_mean']}")
     else:
         tune.run(SACTrainer,
                  verbose=args.verbose,
                  config=get_config(args),
-                 stop={
-                     "timesteps_total": args.timesteps,
-                    },
-                 # resources_per_trial={'cpu': 2,#config['num_workers'],
-                 #                      'gpu': 0.5,#config['num_gpus']
-                 #    },
+                 stop={"timesteps_total": args.timesteps},
                  reuse_actors=True,
                  local_dir=args.local_dir,
                  checkpoint_freq=args.checkpoint_freq,

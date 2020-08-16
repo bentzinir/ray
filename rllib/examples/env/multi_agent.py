@@ -14,6 +14,10 @@ def make_multiagent(env_name_or_creator):
                 ]
             else:
                 self.agents = [env_name_or_creator(config) for _ in range(num)]
+            normalize_actions = config.pop("normalize_actions", True)
+            if normalize_actions:
+                from ray.rllib.env.normalize_actions import NormalizeActionWrapper
+                self.agents = [NormalizeActionWrapper(agent) for agent in self.agents]
             self.dones = set()
             self.observation_space = self.agents[0].observation_space
             self.action_space = self.agents[0].action_space
@@ -26,6 +30,8 @@ def make_multiagent(env_name_or_creator):
             obs, rew, done, info = {}, {}, {}, {}
             for i, action in action_dict.items():
                 obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
+                info[i]["my_id"] = i
+                # rew[i] = rew[i] / len(self.agents)
                 if done[i]:
                     self.dones.add(i)
             done["__all__"] = len(self.dones) == len(self.agents)

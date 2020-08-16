@@ -15,6 +15,14 @@ MAP_DATA = """
 #           ###           #
 #           ###           #
 #           ###           #
+#           ###           #
+#           ###           #
+#           ###           #
+#           ###           #
+#           ###           #
+#           ###           #
+#           ###           #
+#           ###           #
 #            F            #
 ###########################"""
 
@@ -38,7 +46,7 @@ class MazeEnv(gym.Env):
         #     Discrete(4),  # wind direction (N, E, S, W)
         # ])
         self.observation_space = Box(0, 100, shape=(2,))
-        self.action_space = Discrete(4)  # whether to move or not
+        self.action_space = Discrete(5)  # whether to move or not
         self.viewer = None
         self.h = len(self.map)
         self.w = len(self.map[0])
@@ -66,13 +74,15 @@ class MazeEnv(gym.Env):
         self.pos = self._get_new_pos(self.pos, action)
         self.num_steps += 1
         at_goal = self.pos == self.end_pos
-        done = at_goal or self.num_steps >= 200
+        done = at_goal or self.num_steps >= 100
         if verbose:
             print(f"step: {self.num_steps}, pos: {self.pos}")
-        return (np.array(self.pos),
-                10 * int(at_goal), done, {})
+        # return (np.array(self.pos), float(10 * int(at_goal)), done, {})
+        reward = 100. if at_goal else 0.
+        return np.array(self.pos), reward, done, {}
 
     def _get_new_pos(self, pos, direction):
+        new_pos = pos
         if direction == 0:
             new_pos = (pos[0] - 1, pos[1])
         elif direction == 1:
