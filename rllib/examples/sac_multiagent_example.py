@@ -157,7 +157,7 @@ def get_config(args):
             },
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
-        'framework': 'tfe' if args.tfe else 'tf2',
+        'framework': 'tfe' if args.tfe else 'tf',
         'target_entropy': args.target_entropy,
         "callbacks": callback_builder(),
         'train_batch_size': batch_scale * args.batch_size,
