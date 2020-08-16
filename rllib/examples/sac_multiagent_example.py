@@ -54,7 +54,12 @@ def get_q_value(policy, batch):
         actions = batch[SampleBatch.ACTIONS]
         if policy.model.discrete:
             qvec = policy.model.get_q_values(model_out_t)
-            return [q[a] for q, a in zip(qvec.numpy(), actions)]
+            if policy.config['framework'] in ['tf2', 'tfe']:
+                return [q[a] for q, a in zip(qvec.numpy(), actions)]
+            else:  # 'tensorflow'
+                qvec_np = qvec.eval(session=policy.get_session())
+                return [q[a] for q, a in zip(qvec_np, actions)]
+
         else:
             return policy.model.get_q_values(model_out_t, actions)
     else:
@@ -115,9 +120,6 @@ def callback_builder():
         def on_episode_end(self, worker: RolloutWorker, base_env: BaseEnv,
                            policies: Dict[str, Policy], episode: MultiAgentEpisode,
                            **kwargs):
-            # for policy_name in policies.keys():
-            #     policy_number = policy_name.split('_')[1]
-            #     episode.custom_metrics[f"reward_{policy_number}"] = episode.agent_rewards[policy_name]
             pass
 
     return MyCallbacks
@@ -157,7 +159,8 @@ def get_config(args):
             },
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
-        'framework': 'tfe' if args.tfe else 'tf',
+        # 'framework': 'tfe' if args.tfe else 'tf2',
+        'framework': 'torch',
         'target_entropy': args.target_entropy,
         "callbacks": callback_builder(),
         'train_batch_size': batch_scale * args.batch_size,

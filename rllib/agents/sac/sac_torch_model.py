@@ -32,6 +32,9 @@ class SACTorchModel(TorchModelV2, nn.Module):
                  critic_hiddens=(256, 256),
                  twin_q=False,
                  initial_alpha=1.0,
+                 initial_beta=0.1,
+                 alpha=None,
+                 beta=None,
                  target_entropy=None):
         """Initialize variables of this model.
 
