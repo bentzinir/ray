@@ -103,15 +103,14 @@ def callback_builder():
                 # assert that original_batches keys are indeed agent_id
                 # TODO: this assertion may fail. replace with a logic that extracts individual samples
                 assert np.all([oinfo['my_id'] == opp_index for oinfo in obatch["infos"]])
-                own_qs = get_q_value(policy, obatch)
-                slave_qs = get_q_value(opolicy, obatch)
-                for i, (own_q, slave_q) in enumerate(zip(own_qs, slave_qs)):
-                    if slave_q > own_q:
-                        for key in obatch.keys():
-                            val = obatch[key][i].copy()
-                            if key == 'valid_opp_obs':
-                                val = False
-                            postprocessed_batch[key] = np.append(postprocessed_batch[key], [val], axis=0)
+                # own_qs = get_q_value(policy, obatch)
+                # slave_qs = get_q_value(opolicy, obatch)
+                for i in range(obatch.count):
+                    for key in obatch.keys():
+                        val = obatch[key][i].copy()
+                        if key == 'valid_opp_obs':
+                            val = False
+                        postprocessed_batch[key] = np.append(postprocessed_batch[key], [val], axis=0)
             return
 
         def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
@@ -159,8 +158,8 @@ def get_config(args):
             },
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
-        # 'framework': 'tfe' if args.tfe else 'tf2',
-        'framework': 'torch',
+        'framework': 'tfe' if args.tfe else 'tf',
+        # 'framework': 'torch',
         'target_entropy': args.target_entropy,
         "callbacks": callback_builder(),
         'train_batch_size': batch_scale * args.batch_size,
