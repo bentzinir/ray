@@ -7,7 +7,7 @@ from ray.rllib.utils.framework import try_import_tf
 tf1, tf, tfv = try_import_tf()
 
 
-class SACTFModel(TFModelV2):
+class SACMATFModel(TFModelV2):
     """Extension of standard TFModel for SAC.
 
     Data flow:
@@ -31,6 +31,9 @@ class SACTFModel(TFModelV2):
                  critic_hiddens=(256, 256),
                  twin_q=False,
                  initial_alpha=1.0,
+                 initial_beta=0.1,
+                 alpha=None,
+                 beta=None,
                  target_entropy=None):
         """Initialize variables of this model.
 
@@ -47,7 +50,7 @@ class SACTFModel(TFModelV2):
         only defines the layers for the output heads. Those layers for
         forward() should be defined in subclasses of SACModel.
         """
-        super(SACTFModel, self).__init__(obs_space, action_space, num_outputs,
+        super(SACMATFModel, self).__init__(obs_space, action_space, num_outputs,
                                          model_config, name)
         if isinstance(action_space, Discrete):
             self.action_dim = action_space.n
@@ -114,6 +117,10 @@ class SACTFModel(TFModelV2):
         else:
             self.twin_q_net = None
 
+        if alpha is not None:
+            initial_alpha = alpha
+            print("=================Constant Alpha=================")
+
         self.log_alpha = tf.Variable(
             np.log(initial_alpha), dtype=tf.float32, name="log_alpha")
         self.alpha = tf.exp(self.log_alpha)
@@ -130,6 +137,29 @@ class SACTFModel(TFModelV2):
         self.target_entropy = target_entropy
 
         self.register_variables([self.log_alpha])
+
+        ###################################
+        # discriminator
+        d_net = tf.keras.Sequential([tf.keras.layers.Dense(
+            units=units,
+            activation=getattr(tf.nn, critic_hidden_activation, None),
+            name="d_hidden_{}".format(i))
+                                        for i, units in enumerate(critic_hiddens)
+                                    ] + [
+                                        tf.keras.layers.Dense(
+                                            units=2, activation=None, name="d_out")
+                                    ])
+        self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
+        self.register_variables(self.d_net.variables)
+        if beta is not None:
+            initial_beta = beta
+            print("=================Constant Beta=================")
+        self.log_beta = tf.Variable(
+            np.log(initial_beta), dtype=tf.float32, name="log_beta")
+        self.beta = tf.exp(self.log_beta)
+        self.register_variables([self.log_beta])
+        self.target_acc = 0.9
+        ###################################
 
     def get_q_values(self, model_out, actions=None):
         """Return the Q estimates for the most recent forward pass.
@@ -186,10 +216,17 @@ class SACTFModel(TFModelV2):
         """
         return self.action_model(model_out)
 
+    def get_d_values(self, model_out):
+        return self.d_net(model_out)
+
     def policy_variables(self):
         """Return the list of variables for the policy net."""
 
         return list(self.action_model.variables)
+
+    def d_variables(self):
+        """Return the list of variables for the dicsrimination net."""
+        return self.d_net.variables
 
     def q_variables(self):
         """Return the list of variables for Q / twin Q nets."""

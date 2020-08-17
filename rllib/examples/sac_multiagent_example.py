@@ -2,7 +2,7 @@ import argparse
 import gym
 import ray
 from ray import tune
-from ray.rllib.agents.sac import SACTrainer
+from ray.rllib.agents.sac import SACMATrainer
 from ray.rllib.policy.sample_batch import SampleBatch
 import numpy as np
 from ray.rllib.agents.callbacks import DefaultCallbacks
@@ -198,13 +198,13 @@ if __name__ == "__main__":
              local_mode=args.local_mode)
 
     if args.debug:
-        trainer = SACTrainer(config=get_config(args))
+        trainer = SACMATrainer(config=get_config(args))
         i = 0
         while True:
             results = trainer.train()
             print(f"Iter: {results['training_iteration']}, R: {results['episode_reward_mean']}")
     else:
-        tune.run(SACTrainer,
+        tune.run(SACMATrainer,
                  verbose=args.verbose,
                  config=get_config(args),
                  stop={"timesteps_total": args.timesteps},
