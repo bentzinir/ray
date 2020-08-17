@@ -1,7 +1,8 @@
 import gym
-
+from collections import deque
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.tests.test_rollout_worker import MockEnv, MockEnv2
+import numpy as np
 
 
 def make_multiagent(env_name_or_creator):
@@ -21,9 +22,14 @@ def make_multiagent(env_name_or_creator):
             self.dones = set()
             self.observation_space = self.agents[0].observation_space
             self.action_space = self.agents[0].action_space
+            self.ensemble_reward_queues = [deque(maxlen=1) for _ in range(len(self.agents))]
+            self.episode_rewards = [0 for _ in range(len(self.agents))]
 
         def reset(self):
             self.dones = set()
+            for aidx in range(len(self.agents)):
+                self.ensemble_reward_queues[aidx].append(self.episode_rewards[aidx])
+                self.episode_rewards[aidx] = 0
             return {i: a.reset() for i, a in enumerate(self.agents)}
 
         def step(self, action_dict):
@@ -31,7 +37,9 @@ def make_multiagent(env_name_or_creator):
             for i, action in action_dict.items():
                 obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
                 info[i]["my_id"] = i
+                info[i]["R"] = np.mean(self.ensemble_reward_queues[i])
                 # rew[i] = rew[i] / len(self.agents)
+                self.episode_rewards[i] += rew[i]
                 if done[i]:
                     self.dones.add(i)
             done["__all__"] = len(self.dones) == len(self.agents)
