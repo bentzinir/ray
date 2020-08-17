@@ -3,6 +3,7 @@ from ray.rllib.agents.sac.sac_tf_policy import SACTFPolicy
 from ray.rllib.agents.sac.sac_torch_policy import SACTorchPolicy
 from ray.rllib.agents.sac.sac_ensemble import SACEnsembleTrainer
 from ray.rllib.agents.sac.sac_ensemble_tf_policy import SACEnsembleTFPolicy
+from ray.rllib.agents.sac.sac_ma import SACMATrainer
 
 __all__ = [
     "SACTFPolicy",

@@ -2,7 +2,7 @@ import logging
 
 from ray.rllib.agents.trainer import with_common_config
 from ray.rllib.agents.dqn.dqn import GenericOffPolicyTrainer
-from ray.rllib.agents.sac.sac_tf_policy import SACTFPolicy
+from ray.rllib.agents.sac.sac_ma_tf_policy import SACMATFPolicy
 from ray.rllib.utils.deprecation import deprecation_warning, DEPRECATED_VALUE
 
 logger = logging.getLogger(__name__)
@@ -122,6 +122,8 @@ DEFAULT_CONFIG = with_common_config({
     # by user's config). If we don't set them here, we will get an error
     # from the config-key checker.
     "grad_norm_clipping": DEPRECATED_VALUE,
+    "alpha": None,
+    "beta": None,
 })
 # __sphinx_doc_end__
 # yapf: enable
@@ -132,7 +134,7 @@ def get_policy_class(config):
         from ray.rllib.agents.sac.sac_torch_policy import SACTorchPolicy
         return SACTorchPolicy
     else:
-        return SACTFPolicy
+        return SACMATFPolicy
 
 
 def validate_config(config):
@@ -165,10 +167,10 @@ def validate_config(config):
                 error=True)
 
 
-SACTrainer = GenericOffPolicyTrainer.with_updates(
-    name="SAC",
+SACMATrainer = GenericOffPolicyTrainer.with_updates(
+    name="SACMA",
     default_config=DEFAULT_CONFIG,
-    default_policy=SACTFPolicy,
+    default_policy=SACMATFPolicy,
     get_policy_class=get_policy_class,
     validate_config=validate_config,
 )
