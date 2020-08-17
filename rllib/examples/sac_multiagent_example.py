@@ -79,6 +79,10 @@ def callback_builder():
                             episode: MultiAgentEpisode, **kwargs):
             pass
 
+        @staticmethod
+        def average_performance(batches):
+            return {k: batches[k][1]['infos'][0]['R'] for k in batches.keys()}
+
         def on_postprocess_trajectory(
             self, worker: RolloutWorker, episode: MultiAgentEpisode,
             agent_id: str, policy_id: str, policies: Dict[str, Policy],
@@ -86,6 +90,8 @@ def callback_builder():
             original_batches: Dict[str, SampleBatch], **kwargs):
 
             policy, _ = original_batches[agent_id]
+
+            average_performance = self.average_performance(original_batches)
 
             masters = [okey for okey in original_batches.keys() if okey < agent_id]
             if len(masters) > 0:
@@ -96,7 +102,8 @@ def callback_builder():
                         postprocessed_batch["opponent_obs"][i] = oobs.copy()
                         postprocessed_batch["valid_opp_obs"][i] = True
 
-            slaves = [okey for okey in original_batches.keys() if okey > agent_id]
+            slaves = [okey for okey in original_batches.keys() if
+                      okey > agent_id and average_performance[okey] > average_performance[agent_id]]
             if len(slaves) > 0:
                 opp_index = random.choice(slaves)
                 opolicy, obatch = original_batches[opp_index]

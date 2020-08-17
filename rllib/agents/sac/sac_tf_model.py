@@ -158,7 +158,7 @@ class SACTFModel(TFModelV2):
             np.log(initial_beta), dtype=tf.float32, name="log_beta")
         self.beta = tf.exp(self.log_beta)
         self.register_variables([self.log_beta])
-        self.target_acc = 0.7
+        self.target_acc = 0.9
         ###################################
 
     def get_q_values(self, model_out, actions=None):
