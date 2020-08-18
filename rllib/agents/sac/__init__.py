@@ -11,5 +11,6 @@ __all__ = [
     "SACTrainer",
     "DEFAULT_CONFIG",
     "SACEnsembleTrainer",
-    "SACEnsembleTFPolicy"
+    "SACEnsembleTFPolicy",
+    "SACMATrainer",
 ]
