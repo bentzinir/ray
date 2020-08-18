@@ -45,6 +45,9 @@ def make_multiagent(env_name_or_creator):
             done["__all__"] = len(self.dones) == len(self.agents)
             return obs, rew, done, info
 
+        def render(self):
+            [a.render() for a in self.agents]
+
     return MultiEnv
 
 

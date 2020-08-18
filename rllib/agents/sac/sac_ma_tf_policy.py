@@ -60,7 +60,9 @@ def build_sac_model(policy, obs_space, action_space, config):
         initial_alpha=config["initial_alpha"],
         target_entropy=config["target_entropy"],
         alpha=config["alpha"],
-        beta=config["beta"])
+        beta=config["beta"],
+        entropy_scale=config["entropy_scale"],
+        target_acc=config["target_acc"],)
 
     policy.target_model = ModelCatalog.get_model_v2(
         obs_space=obs_space,
@@ -79,7 +81,9 @@ def build_sac_model(policy, obs_space, action_space, config):
         initial_alpha=config["initial_alpha"],
         target_entropy=config["target_entropy"],
         alpha=config["alpha"],
-        beta=config["beta"])
+        beta=config["beta"],
+        entropy_scale=config["entropy_scale"],
+        target_acc=config["target_acc"],)
 
     return policy.model
 

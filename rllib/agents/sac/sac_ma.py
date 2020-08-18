@@ -125,6 +125,8 @@ DEFAULT_CONFIG = with_common_config({
     "alpha": None,
     "beta": None,
     "asymmetric": False,
+    "entropy_scale": 1,
+    "target_acc": None,
 })
 # __sphinx_doc_end__
 # yapf: enable

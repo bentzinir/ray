@@ -12,6 +12,7 @@ def get_config(args):
         'num_gpus': args.num_gpus,
         'framework': 'tfe' if args.tfe else 'tf',
         'gamma': args.gamma,
+        'buffer_size': args.buffer_size,
     }
 
 

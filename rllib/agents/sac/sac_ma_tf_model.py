@@ -31,10 +31,12 @@ class SACMATFModel(TFModelV2):
                  critic_hiddens=(256, 256),
                  twin_q=False,
                  initial_alpha=1.0,
-                 initial_beta=0.1,
+                 initial_beta=1.0,
                  alpha=None,
                  beta=None,
-                 target_entropy=None):
+                 target_entropy=None,
+                 target_acc=0.5,
+                 entropy_scale=1):
         """Initialize variables of this model.
 
         Extra model kwargs:
@@ -134,6 +136,7 @@ class SACMATFModel(TFModelV2):
             # See [1] (README.md).
             else:
                 target_entropy = -np.prod(action_space.shape)
+        target_entropy = entropy_scale * target_entropy
         self.target_entropy = target_entropy
 
         self.register_variables([self.log_alpha])
@@ -158,7 +161,7 @@ class SACMATFModel(TFModelV2):
             np.log(initial_beta), dtype=tf.float32, name="log_beta")
         self.beta = tf.exp(self.log_beta)
         self.register_variables([self.log_beta])
-        self.target_acc = 0.9
+        self.target_acc = target_acc
         ###################################
 
     def get_q_values(self, model_out, actions=None):
