@@ -114,6 +114,7 @@ def callback_builder():
 
             if len(slaves) > 0:
                 opp_index = random.choice(slaves)
+                # print(f"Data augmentation: {opp_index}-> {agent_id}")
                 opolicy, obatch = original_batches[opp_index]
                 # assert that original_batches keys are indeed agent_id
                 # TODO: this assertion may fail. replace with a logic that extracts individual samples

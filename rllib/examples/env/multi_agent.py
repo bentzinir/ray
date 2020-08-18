@@ -22,14 +22,17 @@ def make_multiagent(env_name_or_creator):
             self.dones = set()
             self.observation_space = self.agents[0].observation_space
             self.action_space = self.agents[0].action_space
-            self.ensemble_reward_queues = [deque(maxlen=1) for _ in range(len(self.agents))]
-            self.episode_rewards = [0 for _ in range(len(self.agents))]
+            self.ensemble_reward_queues = [deque(maxlen=10) for _ in range(len(self.agents))]
+            self.episode_rewards = {k: 0 for k in range(len(self.agents))}
+
+        def update_agent_stats(self, i):
+            self.ensemble_reward_queues[i].append(self.episode_rewards[i])
+            self.episode_rewards[i] = 0
 
         def reset(self):
             self.dones = set()
             for aidx in range(len(self.agents)):
-                self.ensemble_reward_queues[aidx].append(self.episode_rewards[aidx])
-                self.episode_rewards[aidx] = 0
+                self.update_agent_stats(aidx)
             return {i: a.reset() for i, a in enumerate(self.agents)}
 
         def step(self, action_dict):
@@ -42,6 +45,9 @@ def make_multiagent(env_name_or_creator):
                 self.episode_rewards[i] += rew[i]
                 if done[i]:
                     self.dones.add(i)
+                    obs[i] = self.agents[i].reset()
+                    self.update_agent_stats(i)
+                    info[i]["R"] = np.mean(self.ensemble_reward_queues[i])
             done["__all__"] = len(self.dones) == len(self.agents)
             return obs, rew, done, info
 

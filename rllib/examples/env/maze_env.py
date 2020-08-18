@@ -70,7 +70,7 @@ class MazeEnv(gym.Env):
         if verbose:
             print(f"step: {self.num_steps}, pos: {self.pos}")
         # return (np.array(self.pos), float(10 * int(at_goal)), done, {})
-        reward = 100. if at_goal else 0.
+        reward = 1. if at_goal else 0.
         return np.array(self.pos), reward, done, {}
 
     def _get_new_pos(self, pos, direction):
