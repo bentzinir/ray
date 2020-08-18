@@ -43,6 +43,8 @@ def get_parser():
     parser.add_argument("--checkpoint_dir", type=str, default=None)
     parser.add_argument("--checkpoint_freq", type=int, default=0)
     parser.add_argument("--buffer_size", type=int, default=1000000)
+    parser.add_argument("--entropy_scale", type=float, default=1.)
+    parser.add_argument("--target_acc", type=float, default=0.5)
     return parser
 
 
@@ -174,8 +176,6 @@ def get_config(args):
         'target_entropy': args.target_entropy,
         "callbacks": callback_builder(),
         'train_batch_size': batch_scale * args.batch_size,
-        'gamma': args.gamma,
-        # 'alpha': tune.grid_search([0.4, 0.3, 0.2, 0.1]) if args.alpha_grid_search else args.alpha,
         "multiagent": {
             "policies": policies,
             "policy_mapping_fn": (lambda x: f"policy_{x}"),
@@ -184,7 +184,11 @@ def get_config(args):
         "normalize_actions": False,
         "alpha": args.alpha,
         "beta": args.beta,
+        'gamma': args.gamma,
         "asymmetric": args.asymmetric,
+        "buffer_size": args.buffer_size,
+        "entropy_scale": args.entropy_scale,
+        "target_acc": args.target_acc,
     }
 
 
