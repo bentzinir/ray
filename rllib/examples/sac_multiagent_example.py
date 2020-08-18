@@ -153,8 +153,6 @@ def get_config(args):
         single_env = gym.make(args.env)
     else:
         single_env = args.env()
-    # from gym.spaces import Dict
-    # obs_space = Dict({"own": single_env.observation_space})
     obs_space = single_env.observation_space
     act_space = single_env.action_space
 
