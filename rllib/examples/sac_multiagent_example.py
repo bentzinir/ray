@@ -42,6 +42,7 @@ def get_parser():
     parser.add_argument("--local_dir", type=str, default="none")
     parser.add_argument("--checkpoint_dir", type=str, default=None)
     parser.add_argument("--checkpoint_freq", type=int, default=0)
+    parser.add_argument("--buffer_size", type=int, default=1000000)
     return parser
 
 
@@ -93,7 +94,14 @@ def callback_builder():
 
             average_performance = self.average_performance(original_batches)
 
-            masters = [okey for okey in original_batches.keys() if okey < agent_id]
+            if worker.policy_config["asymmetric"]:
+                masters = [okey for okey in original_batches.keys() if okey < agent_id]
+                slaves = [okey for okey in original_batches.keys() if
+                          okey > agent_id and average_performance[okey] > average_performance[agent_id]]
+            else:
+                masters = [okey for okey in original_batches.keys() if okey != agent_id]
+                slaves = []
+
             if len(masters) > 0:
                 opp_index = random.choice(masters)
                 opolicy, obatch = original_batches[opp_index]
@@ -102,8 +110,6 @@ def callback_builder():
                         postprocessed_batch["opponent_obs"][i] = oobs.copy()
                         postprocessed_batch["valid_opp_obs"][i] = True
 
-            slaves = [okey for okey in original_batches.keys() if
-                      okey > agent_id and average_performance[okey] > average_performance[agent_id]]
             if len(slaves) > 0:
                 opp_index = random.choice(slaves)
                 opolicy, obatch = original_batches[opp_index]
@@ -180,6 +186,7 @@ def get_config(args):
         "normalize_actions": False,
         "alpha": args.alpha,
         "beta": args.beta,
+        "asymmetric": args.asymmetric,
     }
 
 
