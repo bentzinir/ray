@@ -1,19 +1,7 @@
-from ray.rllib.examples.sac_multiagent_example import get_parser
+from ray.rllib.examples.sac_multiagent_train import get_parser, get_config
 import ray
 from ray import tune
 from ray.rllib.agents.sac import SACTrainer
-
-
-def get_config(args):
-
-    return {
-        'env': args.env,
-        'num_workers': args.num_workers,
-        'num_gpus': args.num_gpus,
-        'framework': 'tfe' if args.tfe else 'tf',
-        'gamma': args.gamma,
-        'buffer_size': args.buffer_size,
-    }
 
 
 def get_args():
