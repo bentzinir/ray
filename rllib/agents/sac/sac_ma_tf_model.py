@@ -31,7 +31,8 @@ class SACMATFModel(TFModelV2):
                  critic_hiddens=(256, 256),
                  twin_q=False,
                  initial_alpha=1.0,
-                 initial_beta=1.0,
+                 # TODO: debugging initial beta
+                 initial_beta=1e-2,  # 1.0
                  alpha=None,
                  beta=None,
                  target_entropy=None,

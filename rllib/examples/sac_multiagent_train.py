@@ -116,12 +116,9 @@ def callback_builder():
                 opp_index = random.choice(slaves)
                 # print(f"Data augmentation: {opp_index}-> {agent_id}")
                 opolicy, obatch = original_batches[opp_index]
-                # assert that original_batches keys are indeed agent_id
-                # TODO: this assertion may fail. replace with a logic that extracts individual samples
-                assert np.all([oinfo['my_id'] == opp_index for oinfo in obatch["infos"]])
-                # own_qs = get_q_value(policy, obatch)
-                # slave_qs = get_q_value(opolicy, obatch)
                 for i in range(obatch.count):
+                    if obatch["infos"][i]["my_id"] != opp_index:
+                        continue
                     for key in obatch.keys():
                         val = obatch[key][i].copy()
                         if key == 'valid_opp_obs':
