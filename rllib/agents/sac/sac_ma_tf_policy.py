@@ -103,7 +103,7 @@ def get_dist_class(config, action_space):
     if isinstance(action_space, Discrete):
         return Categorical
     else:
-        if config["normalize_actions"]:
+        if config["normalize_actions"] or "env_config" in config and config["env_config"]["normalize_actions"]:
             return SquashedGaussian if \
                 not config["_use_beta_distribution"] else Beta
         else:
@@ -329,7 +329,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
-    return actor_loss + tf.math.add_n(critic_loss) + alpha_loss + disc_loss
+    return actor_loss + tf.math.add_n(critic_loss) + alpha_loss + disc_loss + beta_loss
 
 
 def gradients_fn(policy, optimizer, loss):
@@ -434,7 +434,7 @@ def apply_gradients(policy, optimizer, grads_and_vars):
             policy._beta_optimizer.apply_gradients(policy._beta_grads_and_vars)
         return
     else:
-        apply_ops = [actor_apply_ops, disc_apply_ops] + critic_apply_ops
+        apply_ops = [actor_apply_ops] + critic_apply_ops + [disc_apply_ops]
         if policy.config["alpha"] is None:
             alpha_apply_ops = policy._alpha_optimizer.apply_gradients(
                 policy._alpha_grads_and_vars,

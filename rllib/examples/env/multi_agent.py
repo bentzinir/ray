@@ -38,6 +38,9 @@ def make_multiagent(env_name_or_creator):
         def step(self, action_dict):
             obs, rew, done, info = {}, {}, {}, {}
             for i, action in action_dict.items():
+                if np.any(np.isnan(action)):
+                    print("=================== (multi agent) Nan Detected =================")
+                    input("(multi agent) Nan detected")
                 obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
                 info[i]["my_id"] = i
                 info[i]["R"] = np.mean(self.ensemble_reward_queues[i])
