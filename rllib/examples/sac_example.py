@@ -1,15 +1,19 @@
-from ray.rllib.examples.sac_multiagent_train import get_parser, get_config
+from ray.rllib.examples.sac_multiagent_train import get_args
 import ray
 from ray import tune
 from ray.rllib.agents.sac import SACTrainer
 
 
-def get_args():
-    args, extra_args = get_parser().parse_known_args()
-    if args.env == 'maze':
-        from ray.rllib.examples.env.maze_env import MazeEnv
-        args.env = MazeEnv
-    return args, extra_args
+def get_config(args):
+
+    return {
+        'env': args.env,
+        'num_workers': args.num_workers,
+        'num_gpus': args.num_gpus,
+        'framework': 'tfe' if args.tfe else 'tf',
+        'gamma': args.gamma,
+        'buffer_size': args.buffer_size,
+    }
 
 
 if __name__ == "__main__":
@@ -18,8 +22,10 @@ if __name__ == "__main__":
     ray.init(num_cpus=args.num_cpus or None,
              local_mode=args.local_mode)
 
+    config = get_config(args)
+
     if args.debug:
-        trainer = SACTrainer(config=get_config(args))
+        trainer = SACTrainer(config=config)
         i = 0
         while True:
             results = trainer.train()
@@ -27,7 +33,7 @@ if __name__ == "__main__":
     else:
         tune.run(SACTrainer,
                  verbose=args.verbose,
-                 config=get_config(args),
+                 config=config,
                  stop={"timesteps_total": args.timesteps},
                  reuse_actors=True,
                  local_dir=args.local_dir,

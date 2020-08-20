@@ -91,7 +91,7 @@ def get_dist_class(config, action_space):
     if isinstance(action_space, Discrete):
         return Categorical
     else:
-        if config["normalize_actions"]:
+        if config["normalize_actions"] or "env_config" in config and config["env_config"]["normalize_actions"]:
             return SquashedGaussian if \
                 not config["_use_beta_distribution"] else Beta
         else:
