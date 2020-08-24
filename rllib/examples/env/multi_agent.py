@@ -24,7 +24,7 @@ def make_multiagent(env_name_or_creator):
             self.dones = set()
             self.observation_space = self.agents[0].observation_space
             self.action_space = self.agents[0].action_space
-            self.episode_queue = [deque(maxlen=10) for _ in range(self.nagents)]
+            self.episode_queue = [deque(maxlen=100) for _ in range(self.nagents)]
             self.episode = [[] for _ in range(self.nagents)]
 
         @staticmethod
@@ -55,12 +55,16 @@ def make_multiagent(env_name_or_creator):
             own_performance = np.mean(self.get_total_reward_queue(i))
             pos_episodes = []
             for j in range(i+1, self.nagents):
+                opp_performance = np.mean(self.get_total_reward_queue(j))
+                if opp_performance < own_performance:
+                    continue
                 for episode in self.episode_queue[j]:
                     if self.get_total_reward(episode) > own_performance:
-                        pos_episodes.append(episode)
+                        pos_episodes.append((episode, j))
             if pos_episodes:
-                pos_episode = random.choice(pos_episodes)
+                pos_episode, opp_idx = random.choice(pos_episodes)
                 if pos_episode:
+                    # print(f"Data augmentation: episode total: {self.get_total_reward(pos_episode)}, {opp_idx} ({np.mean(self.get_total_reward_queue(opp_idx))}) -> {i} ({own_performance})")
                     return random.choice(pos_episode)["obs"]
 
         def reset_i(self, i):
