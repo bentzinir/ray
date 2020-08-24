@@ -1,6 +1,6 @@
 from gym.spaces import Box, Discrete
 import logging
-
+import numpy as np
 import ray
 import ray.experimental.tf_utils
 from ray.rllib.agents.ddpg.ddpg_tf_policy import ComputeTDErrorMixin, \
@@ -21,6 +21,10 @@ tf1, tf, tfv = try_import_tf()
 tfp = try_import_tfp()
 
 logger = logging.getLogger(__name__)
+
+AGENT_LABEL = 0
+OPPONENT_LABEL = 1
+LEARN_IT = .1
 
 
 def build_sac_model(policy, obs_space, action_space, config):
@@ -92,10 +96,12 @@ def postprocess_trajectory(policy,
                            sample_batch,
                            other_agent_batches=None,
                            episode=None):
-    import numpy as np
-    if "opponent_obs" not in sample_batch:
-        sample_batch["opponent_obs"] = sample_batch[SampleBatch.CUR_OBS].copy()
-        sample_batch["valid_opp_obs"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    if "neg_obs" not in sample_batch:
+        sample_batch["neg_obs"] = sample_batch[SampleBatch.CUR_OBS].copy()
+        sample_batch["valid_neg_obs"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    if "pos_obs" not in sample_batch:
+        sample_batch["pos_obs"] = sample_batch[SampleBatch.CUR_OBS].copy()
+        sample_batch["valid_pos_obs"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
     return postprocess_nstep_and_prio(policy, sample_batch)
 
 
@@ -146,8 +152,13 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         "is_training": policy._get_is_training_placeholder(),
     }, [], None)
 
-    model_out_t_opp, _ = model({
-        "obs": train_batch["opponent_obs"],
+    model_out_t_neg, _ = model({
+        "obs": train_batch["neg_obs"],
+        "is_training": policy._get_is_training_placeholder(),
+    }, [], None)
+
+    model_out_t_pos, _ = model({
+        "obs": train_batch["pos_obs"],
         "is_training": policy._get_is_training_placeholder(),
     }, [], None)
 
@@ -179,10 +190,16 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
         q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
         # Diversity reward
-        d_tp1 = model.get_d_values(model_out_tp1)
-        log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
-        own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[0]
-        q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
+        d_neg_tp1 = model.get_d_values(model_out_tp1)["neg"]
+        log_d_neg_tp1 = tf.nn.log_softmax(d_neg_tp1, axis=1)
+        own_log_d_neg_tp1 = tf.split(log_d_neg_tp1, 2, axis=1)[AGENT_LABEL]
+        q_tp1_best += model.beta * tf.squeeze(own_log_d_neg_tp1, axis=1)
+        # Follow the leader reward
+        d_pos_tp1 = model.get_d_values(model_out_tp1)["pos"]
+        log_d_pos_tp1 = tf.nn.log_softmax(d_pos_tp1, axis=1)
+        own_log_d_pos_tp1 = tf.split(log_d_pos_tp1, 2, axis=1)[AGENT_LABEL]
+        # TODO: learn it
+        q_tp1_best -= LEARN_IT * tf.squeeze(own_log_d_pos_tp1, axis=1)
         q_tp1_best_masked = \
             (1.0 - tf.cast(train_batch[SampleBatch.DONES], tf.float32)) * \
             q_tp1_best
@@ -231,10 +248,16 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
         # Diversity reward
-        d_tp1 = model.get_d_values(model_out_tp1)
-        log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
-        own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[0]
+        d_neg_tp1 = model.get_d_values(model_out_tp1)["neg"]
+        log_d_tp1 = tf.nn.log_softmax(d_neg_tp1, axis=1)
+        own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
         q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
+        # Follow the leader reward
+        d_pos_tp1 = model.get_d_values(model_out_tp1)["pos"]
+        log_d_pos_tp1 = tf.nn.log_softmax(d_pos_tp1, axis=1)
+        own_log_d_pos_tp1 = tf.split(log_d_pos_tp1, 2, axis=1)[AGENT_LABEL]
+        # TODO: learn it
+        q_tp1_best -= LEARN_IT * tf.squeeze(own_log_d_pos_tp1, axis=1)
         q_tp1_best_masked = (1.0 - tf.cast(train_batch[SampleBatch.DONES],
                                            tf.float32)) * q_tp1_best
 
@@ -243,7 +266,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # compute RHS of bellman equation
     q_t_selected_target = tf.stop_gradient(
         train_batch[SampleBatch.REWARDS] +
-        policy.config["gamma"]**policy.config["n_step"] * q_tp1_best_masked)
+        policy.config["gamma"] ** policy.config["n_step"] * q_tp1_best_masked)
 
     # Compute the TD-error (potentially clipped).
     base_td_error = tf.math.abs(q_t_selected - q_t_selected_target)
@@ -304,13 +327,25 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             accuracy_vec = tf.math.logical_or(accuracy_vec, tf.math.equal(mask, 0))
         accuracy = tf.reduce_mean(tf.cast(accuracy_vec, tf.float32))
         return tf.reduce_mean(loss_vec), accuracy
-    d_t_own = model.get_d_values(model_out_t)
-    d_t_opp = model.get_d_values(model_out_t_opp)
-    own_disc_loss, own_acc = binary_discrimination_loss(d_t_own, label=0)
-    opp_disc_loss, opp_qcc = binary_discrimination_loss(d_t_opp, label=1, mask=train_batch["valid_opp_obs"])
-    disc_loss = own_disc_loss + opp_disc_loss
-    disc_acc = 0.5 * (own_acc + opp_qcc)
-    beta_loss = model.beta * tf.stop_gradient(disc_acc - model.target_acc)
+
+    def get_discrimination_loss_acc(model_out, model_out_opp, sign):
+        d_t_owndata = model.get_d_values(model_out)[sign]
+        d_t_oppdata = model.get_d_values(model_out_opp)[sign]
+        owndata_disc_loss, owndata_acc = binary_discrimination_loss(d_t_owndata, label=AGENT_LABEL)
+        oppdata_disc_loss, oppdata_acc = binary_discrimination_loss(d_t_oppdata, label=OPPONENT_LABEL,
+                                                                    mask=train_batch[f"valid_{sign}_obs"])
+        disc_loss = owndata_disc_loss + oppdata_disc_loss
+        disc_acc = 0.5 * (owndata_acc + oppdata_acc)
+        return disc_loss, disc_acc
+
+    # 1. Negative discrimination w.r.t neg observations
+    disc_neg_loss, disc_neg_acc = get_discrimination_loss_acc(model_out_t, model_out_t_neg, sign="neg")
+    beta_loss = model.beta * tf.stop_gradient(disc_neg_acc - model.target_acc)
+
+    # 2. Positive discrimination w.r.t pos observations
+    disc_pos_loss, disc_pos_acc = get_discrimination_loss_acc(model_out_t, model_out_t_pos, sign="pos")
+
+    disc_loss = disc_neg_loss + disc_pos_loss
     #####################################################
 
     # save for stats function
@@ -325,7 +360,8 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.beta_value = model.beta
     policy.target_entropy = model.target_entropy
     policy.disc_loss = disc_loss
-    policy.disc_acc = disc_acc
+    policy.disc_neg_acc = disc_neg_acc
+    policy.disc_pos_acc = disc_pos_acc
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
@@ -464,7 +500,8 @@ def stats(policy, train_batch):
         "max_q": tf.reduce_max(policy.q_t),
         "min_q": tf.reduce_min(policy.q_t),
         "disc_loss": tf.reduce_mean(policy.disc_loss),
-        "disc_acc": tf.reduce_mean(policy.disc_acc),
+        "disc_neg_acc": tf.reduce_mean(policy.disc_neg_acc),
+        "disc_pos_acc": tf.reduce_mean(policy.disc_pos_acc),
     }
 
 

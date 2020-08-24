@@ -44,7 +44,6 @@ def make_multiagent(env_name_or_creator):
                 obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
                 info[i]["my_id"] = i
                 info[i]["R"] = np.mean(self.ensemble_reward_queues[i])
-                # rew[i] = rew[i] / len(self.agents)
                 self.episode_rewards[i] += rew[i]
                 if done[i]:
                     self.dones.add(i)

@@ -109,21 +109,16 @@ def callback_builder():
                 opolicy, obatch = original_batches[opp_index]
                 for i, (oobs, oinfo) in enumerate(zip(obatch["obs"], obatch["infos"])):
                     if oinfo['my_id'] == opp_index:
-                        postprocessed_batch["opponent_obs"][i] = oobs.copy()
-                        postprocessed_batch["valid_opp_obs"][i] = True
+                        postprocessed_batch["neg_obs"][i] = oobs.copy()
+                        postprocessed_batch["valid_neg_obs"][i] = True
 
             if len(slaves) > 0:
                 opp_index = random.choice(slaves)
-                # print(f"Data augmentation: {opp_index}-> {agent_id}")
                 opolicy, obatch = original_batches[opp_index]
-                for i in range(obatch.count):
-                    if obatch["infos"][i]["my_id"] != opp_index:
-                        continue
-                    for key in obatch.keys():
-                        val = obatch[key][i].copy()
-                        if key == 'valid_opp_obs':
-                            val = False
-                        postprocessed_batch[key] = np.append(postprocessed_batch[key], [val], axis=0)
+                for i, (oobs, oinfo) in enumerate(zip(obatch["obs"], obatch["infos"])):
+                    if oinfo['my_id'] == opp_index:
+                        postprocessed_batch["pos_obs"][i] = oobs.copy()
+                        postprocessed_batch["valid_pos_obs"][i] = True
             return
 
         def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
