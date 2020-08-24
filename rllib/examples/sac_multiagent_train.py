@@ -4,14 +4,12 @@ import ray
 from ray import tune
 from ray.rllib.agents.sac import SACMATrainer
 from ray.rllib.policy.sample_batch import SampleBatch
-import numpy as np
 from ray.rllib.agents.callbacks import DefaultCallbacks
 from ray.rllib.evaluation import MultiAgentEpisode, RolloutWorker
 from ray.rllib.env import BaseEnv
 from ray.rllib.policy import Policy
 from typing import Dict
 from ray.rllib.examples.env.multi_agent import make_multiagent
-import random
 
 
 def get_parser():
