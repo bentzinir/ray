@@ -48,27 +48,6 @@ def get_parser():
     return parser
 
 
-def get_q_value(policy, batch):
-    if policy.loss_initialized():
-        model_out_t, _ = policy.model({
-                "obs": batch[SampleBatch.CUR_OBS],
-                "is_training": policy._get_is_training_placeholder(),
-            }, [], None)
-        actions = batch[SampleBatch.ACTIONS]
-        if policy.model.discrete:
-            qvec = policy.model.get_q_values(model_out_t)
-            if policy.config['framework'] in ['tf2', 'tfe']:
-                return [q[a] for q, a in zip(qvec.numpy(), actions)]
-            else:  # 'tensorflow'
-                qvec_np = qvec.eval(session=policy.get_session())
-                return [q[a] for q, a in zip(qvec_np, actions)]
-
-        else:
-            return policy.model.get_q_values(model_out_t, actions)
-    else:
-        return -np.inf * np.ones_like(batch[SampleBatch.REWARDS])
-
-
 def callback_builder():
 
     class MyCallbacks(DefaultCallbacks):
@@ -82,10 +61,6 @@ def callback_builder():
                             episode: MultiAgentEpisode, **kwargs):
             pass
 
-        @staticmethod
-        def average_performance(batches):
-            return {k: batches[k][1]['infos'][0]['R'] for k in batches.keys()}
-
         def on_postprocess_trajectory(
             self, worker: RolloutWorker, episode: MultiAgentEpisode,
             agent_id: str, policy_id: str, policies: Dict[str, Policy],
@@ -94,31 +69,13 @@ def callback_builder():
 
             policy, _ = original_batches[agent_id]
 
-            average_performance = self.average_performance(original_batches)
-
-            if worker.policy_config["asymmetric"]:
-                masters = [okey for okey in original_batches.keys() if okey < agent_id]
-                slaves = [okey for okey in original_batches.keys() if
-                          okey > agent_id and average_performance[okey] > average_performance[agent_id]]
-            else:
-                masters = [okey for okey in original_batches.keys() if okey != agent_id]
-                slaves = []
-
-            if len(masters) > 0:
-                opp_index = random.choice(masters)
-                opolicy, obatch = original_batches[opp_index]
-                for i, (oobs, oinfo) in enumerate(zip(obatch["obs"], obatch["infos"])):
-                    if oinfo['my_id'] == opp_index:
-                        postprocessed_batch["neg_obs"][i] = oobs.copy()
-                        postprocessed_batch["valid_neg_obs"][i] = True
-
-            if len(slaves) > 0:
-                opp_index = random.choice(slaves)
-                opolicy, obatch = original_batches[opp_index]
-                for i, (oobs, oinfo) in enumerate(zip(obatch["obs"], obatch["infos"])):
-                    if oinfo['my_id'] == opp_index:
-                        postprocessed_batch["pos_obs"][i] = oobs.copy()
-                        postprocessed_batch["valid_pos_obs"][i] = True
+            for i, t in enumerate(postprocessed_batch['t']):
+                if postprocessed_batch["infos"][i]["neg_obs"] is not None:
+                    postprocessed_batch["neg_obs"][i] = postprocessed_batch["infos"][i]["neg_obs"]
+                    postprocessed_batch["valid_neg_obs"][i] = True
+                if postprocessed_batch["infos"][i]["pos_obs"] is not None:
+                    postprocessed_batch["pos_obs"][i] = postprocessed_batch["infos"][i]["pos_obs"]
+                    postprocessed_batch["valid_pos_obs"][i] = True
             return
 
         def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
@@ -161,6 +118,7 @@ def get_config(args):
         "env_config": {
             "num_agents": args.ensemble_size,
             "normalize_actions": True,
+            "asymmetric": args.asymmetric,
             },
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
