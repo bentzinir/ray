@@ -65,8 +65,6 @@ def callback_builder():
             postprocessed_batch: SampleBatch,
             original_batches: Dict[str, SampleBatch], **kwargs):
 
-            policy, _ = original_batches[agent_id]
-
             for i, t in enumerate(postprocessed_batch['t']):
                 if postprocessed_batch["infos"][i]["neg_obs"] is not None:
                     postprocessed_batch["neg_obs"][i] = postprocessed_batch["infos"][i]["neg_obs"]
