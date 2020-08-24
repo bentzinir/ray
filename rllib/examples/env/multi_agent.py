@@ -3,18 +3,20 @@ from collections import deque
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.tests.test_rollout_worker import MockEnv, MockEnv2
 import numpy as np
+import random
 
 
 def make_multiagent(env_name_or_creator):
     class MultiEnv(MultiAgentEnv):
         def __init__(self, config):
-            num = config.pop("num_agents", 1)
+            self.nagents = config.pop("num_agents", 1)
+            self.asymmetric = config.pop("asymmetric", True)
             if isinstance(env_name_or_creator, str):
                 self.agents = [
-                    gym.make(env_name_or_creator) for _ in range(num)
+                    gym.make(env_name_or_creator) for _ in range(self.nagents)
                 ]
             else:
-                self.agents = [env_name_or_creator(config) for _ in range(num)]
+                self.agents = [env_name_or_creator(config) for _ in range(self.nagents)]
             normalize_actions = config.pop("normalize_actions", True)
             if normalize_actions:
                 from ray.rllib.env.normalize_actions import NormalizeActionWrapper
@@ -22,35 +24,70 @@ def make_multiagent(env_name_or_creator):
             self.dones = set()
             self.observation_space = self.agents[0].observation_space
             self.action_space = self.agents[0].action_space
-            self.ensemble_reward_queues = [deque(maxlen=10) for _ in range(len(self.agents))]
-            self.episode_rewards = {k: 0 for k in range(len(self.agents))}
+            self.episode_queue = [deque(maxlen=10) for _ in range(self.nagents)]
+            self.episode = [[] for _ in range(self.nagents)]
 
-        def update_agent_stats(self, i):
-            self.ensemble_reward_queues[i].append(self.episode_rewards[i])
-            self.episode_rewards[i] = 0
+        @staticmethod
+        def get_total_reward(episode):
+            return sum([item["r"] for item in episode])
+
+        def get_total_reward_queue(self, i):
+            episode_rewards = []
+            for episode in self.episode_queue[i]:
+                episode_rewards.append(self.get_total_reward(episode))
+            return episode_rewards
+
+        def get_neg_obs(self, i):
+            if self.asymmetric:
+                oidxs = [j for j in range(self.nagents) if j < i]
+            else:
+                oidxs = [j for j in range(self.nagents) if j != i]
+            if oidxs:
+                oidx = random.choice(oidxs)
+                episode = random.choice(self.episode_queue[oidx])
+                if episode:
+                    return random.choice(episode)["obs"]
+            return
+
+        def get_pos_obs(self, i):
+            if not self.asymmetric:
+                return
+            own_performance = np.mean(self.get_total_reward_queue(i))
+            pos_episodes = []
+            for j in range(i+1, self.nagents):
+                for episode in self.episode_queue[j]:
+                    if self.get_total_reward(episode) > own_performance:
+                        pos_episodes.append(episode)
+            if pos_episodes:
+                pos_episode = random.choice(pos_episodes)
+                if pos_episode:
+                    return random.choice(pos_episode)["obs"]
+
+        def reset_i(self, i):
+            self.episode_queue[i].append(self.episode[i])
+            self.episode[i] = []
+            return self.agents[i].reset()
 
         def reset(self):
             self.dones = set()
-            for aidx in range(len(self.agents)):
-                self.update_agent_stats(aidx)
-            return {i: a.reset() for i, a in enumerate(self.agents)}
+            obses = {}
+            for aidx in range(self.nagents):
+                obses[aidx] = self.reset_i(aidx)
+            return obses
 
         def step(self, action_dict):
             obs, rew, done, info = {}, {}, {}, {}
             for i, action in action_dict.items():
                 if np.any(np.isnan(action)):
-                    print("=================== (multi agent) Nan Detected =================")
-                    input("(multi agent) Nan detected")
+                    input("(MultiEnv) Nan detected...")
                 obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
-                info[i]["my_id"] = i
-                info[i]["R"] = np.mean(self.ensemble_reward_queues[i])
-                self.episode_rewards[i] += rew[i]
+                info[i]["neg_obs"] = self.get_neg_obs(i)
+                info[i]["pos_obs"] = self.get_pos_obs(i)
+                self.episode[i].append({"obs": obs[i], "r": rew[i]})
                 if done[i]:
                     self.dones.add(i)
-                    obs[i] = self.agents[i].reset()
-                    self.update_agent_stats(i)
-                    info[i]["R"] = np.mean(self.ensemble_reward_queues[i])
-            done["__all__"] = len(self.dones) == len(self.agents)
+                    obs[i] = self.reset_i(i)
+            done["__all__"] = len(self.dones) == self.nagents
             return obs, rew, done, info
 
         def render(self):
