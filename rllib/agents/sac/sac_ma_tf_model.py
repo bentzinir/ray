@@ -151,7 +151,7 @@ class SACMATFModel(TFModelV2):
                                         for i, units in enumerate(critic_hiddens)
                                     ] + [
                                         tf.keras.layers.Dense(
-                                            units=4, activation=None, name="d_out")
+                                            units=2, activation=None, name="d_out")
                                     ])
         self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
         self.register_variables(self.d_net.variables)
@@ -221,8 +221,7 @@ class SACMATFModel(TFModelV2):
         return self.action_model(model_out)
 
     def get_d_values(self, model_out):
-        d = tf.split(self.d_net(model_out), 2, axis=1)
-        return {"neg": d[0], "pos": d[1]}
+        return self.d_net(model_out)
 
     def policy_variables(self):
         """Return the list of variables for the policy net."""
