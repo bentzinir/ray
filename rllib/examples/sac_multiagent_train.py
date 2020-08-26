@@ -64,14 +64,6 @@ def callback_builder():
             agent_id: str, policy_id: str, policies: Dict[str, Policy],
             postprocessed_batch: SampleBatch,
             original_batches: Dict[str, SampleBatch], **kwargs):
-
-            for i, t in enumerate(postprocessed_batch['t']):
-                if postprocessed_batch["infos"][i]["neg_obs"] is not None:
-                    postprocessed_batch["neg_obs"][i] = postprocessed_batch["infos"][i]["neg_obs"]
-                    postprocessed_batch["valid_neg_obs"][i] = True
-                if postprocessed_batch["infos"][i]["pos_obs"] is not None:
-                    postprocessed_batch["pos_obs"][i] = postprocessed_batch["infos"][i]["pos_obs"]
-                    postprocessed_batch["valid_pos_obs"][i] = True
             return
 
         def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):

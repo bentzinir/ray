@@ -1,6 +1,7 @@
 from gym.spaces import Box, Discrete
 import logging
 import numpy as np
+import random
 import ray
 import ray.experimental.tf_utils
 from ray.rllib.agents.ddpg.ddpg_tf_policy import ComputeTDErrorMixin, \
@@ -96,12 +97,25 @@ def postprocess_trajectory(policy,
                            sample_batch,
                            other_agent_batches=None,
                            episode=None):
-    if "neg_obs" not in sample_batch:
-        sample_batch["neg_obs"] = sample_batch[SampleBatch.CUR_OBS].copy()
-        sample_batch["valid_neg_obs"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
-    if "pos_obs" not in sample_batch:
-        sample_batch["pos_obs"] = sample_batch[SampleBatch.CUR_OBS].copy()
-        sample_batch["valid_pos_obs"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    if 'agent_id' not in sample_batch:
+        sample_batch["disc_valid"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+        sample_batch["disc_label"] = np.zeros_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
+        print('agent_id not in sample_batch!')
+    else:
+        agent_id = sample_batch["agent_id"][0]
+        random_id = random.choice([agent_id] + [k for k in other_agent_batches.keys()])
+        if random_id != agent_id:
+            sample_batch = other_agent_batches[random_id][1].copy()
+        ones_vec = np.ones_like(sample_batch[SampleBatch.REWARDS])
+        if random_id < agent_id:
+            sample_batch["disc_valid"] = ones_vec
+            sample_batch["disc_label"] = OPPONENT_LABEL * ones_vec.astype(np.int32)
+        elif random_id == agent_id:
+            sample_batch["disc_valid"] = ones_vec
+            sample_batch["disc_label"] = AGENT_LABEL * ones_vec.astype(np.int32)
+        else:
+            sample_batch["disc_valid"] = 0 * ones_vec
+            sample_batch["disc_label"] = 0 * ones_vec.astype(np.int32)
     return postprocess_nstep_and_prio(policy, sample_batch)
 
 
@@ -152,16 +166,6 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         "is_training": policy._get_is_training_placeholder(),
     }, [], None)
 
-    model_out_t_neg, _ = model({
-        "obs": train_batch["neg_obs"],
-        "is_training": policy._get_is_training_placeholder(),
-    }, [], None)
-
-    model_out_t_pos, _ = model({
-        "obs": train_batch["pos_obs"],
-        "is_training": policy._get_is_training_placeholder(),
-    }, [], None)
-
     # Discrete case.
     if model.discrete:
         # Get all action probs directly from pi and form their logp.
@@ -190,16 +194,10 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
         q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
         # Diversity reward
-        d_neg_tp1 = model.get_d_values(model_out_tp1)["neg"]
+        d_neg_tp1 = model.get_d_values(model_out_tp1)
         log_d_neg_tp1 = tf.nn.log_softmax(d_neg_tp1, axis=1)
         own_log_d_neg_tp1 = tf.split(log_d_neg_tp1, 2, axis=1)[AGENT_LABEL]
         q_tp1_best += model.beta * tf.squeeze(own_log_d_neg_tp1, axis=1)
-        # Follow the leader reward
-        d_pos_tp1 = model.get_d_values(model_out_tp1)["pos"]
-        log_d_pos_tp1 = tf.nn.log_softmax(d_pos_tp1, axis=1)
-        own_log_d_pos_tp1 = tf.split(log_d_pos_tp1, 2, axis=1)[AGENT_LABEL]
-        # TODO: learn it
-        q_tp1_best -= LEARN_IT * tf.squeeze(own_log_d_pos_tp1, axis=1)
         q_tp1_best_masked = \
             (1.0 - tf.cast(train_batch[SampleBatch.DONES], tf.float32)) * \
             q_tp1_best
@@ -252,12 +250,6 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         log_d_tp1 = tf.nn.log_softmax(d_neg_tp1, axis=1)
         own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
         q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
-        # Follow the leader reward
-        d_pos_tp1 = model.get_d_values(model_out_tp1)["pos"]
-        log_d_pos_tp1 = tf.nn.log_softmax(d_pos_tp1, axis=1)
-        own_log_d_pos_tp1 = tf.split(log_d_pos_tp1, 2, axis=1)[AGENT_LABEL]
-        # TODO: learn it
-        q_tp1_best -= LEARN_IT * tf.squeeze(own_log_d_pos_tp1, axis=1)
         q_tp1_best_masked = (1.0 - tf.cast(train_batch[SampleBatch.DONES],
                                            tf.float32)) * q_tp1_best
 
@@ -311,42 +303,14 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             tf.stop_gradient(log_pis_t + model.target_entropy))
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
 
-    ################## discrimination ##################
-    def binary_discrimination_loss(predictions, label, mask=None):
-        if label == 0:
-            labels = tf.zeros_like(train_batch[SampleBatch.REWARDS])
-        elif label == 1:
-            labels = tf.ones_like(train_batch[SampleBatch.REWARDS])
-        else:
-            raise ValueError
-        labels = tf.cast(labels, tf.int32)
-        loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, predictions)
-        accuracy_vec = tf.math.equal(labels, tf.argmax(predictions, axis=1, output_type=tf.int32))
-        if mask is not None:
-            loss_vec *= tf.cast(mask, tf.float32)
-            accuracy_vec = tf.math.logical_or(accuracy_vec, tf.math.equal(mask, 0))
-        accuracy = tf.reduce_mean(tf.cast(accuracy_vec, tf.float32))
-        return tf.reduce_mean(loss_vec), accuracy
-
-    def get_discrimination_loss_acc(model_out, model_out_opp, sign):
-        d_t_owndata = model.get_d_values(model_out)[sign]
-        d_t_oppdata = model.get_d_values(model_out_opp)[sign]
-        owndata_disc_loss, owndata_acc = binary_discrimination_loss(d_t_owndata, label=AGENT_LABEL)
-        oppdata_disc_loss, oppdata_acc = binary_discrimination_loss(d_t_oppdata, label=OPPONENT_LABEL,
-                                                                    mask=train_batch[f"valid_{sign}_obs"])
-        disc_loss = owndata_disc_loss + oppdata_disc_loss
-        disc_acc = 0.5 * (owndata_acc + oppdata_acc)
-        return disc_loss, disc_acc
-
-    # 1. Negative discrimination w.r.t neg observations
-    disc_neg_loss, disc_neg_acc = get_discrimination_loss_acc(model_out_t, model_out_t_neg, sign="neg")
-    beta_loss = model.beta * tf.stop_gradient(disc_neg_acc - model.target_acc)
-
-    # 2. Positive discrimination w.r.t pos observations
-    disc_pos_loss, disc_pos_acc = get_discrimination_loss_acc(model_out_t, model_out_t_pos, sign="pos")
-
-    disc_loss = disc_neg_loss + disc_pos_loss
-    #####################################################
+    # discrimination
+    d_t = model.get_d_values(model_out_t)
+    disc_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
+    disc_loss = tf.reduce_mean(train_batch["disc_valid"] * disc_loss_vec)
+    disc_accuracy_vec = tf.math.equal(train_batch["disc_label"], tf.argmax(d_t, axis=1, output_type=tf.int32))
+    disc_accuracy_vec = tf.cast(disc_accuracy_vec, tf.float32) * train_batch["disc_valid"]
+    disc_accuracy = tf.reduce_sum(disc_accuracy_vec) / (1e-4 + tf.reduce_sum(train_batch["disc_valid"]))
+    beta_loss = model.beta * tf.stop_gradient(disc_accuracy - model.target_acc)
 
     # save for stats function
     policy.policy_t = policy_t
@@ -360,8 +324,8 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.beta_value = model.beta
     policy.target_entropy = model.target_entropy
     policy.disc_loss = disc_loss
-    policy.disc_neg_acc = disc_neg_acc
-    policy.disc_pos_acc = disc_pos_acc
+    policy.disc_acc = disc_accuracy
+    # policy.disc_pos_acc = disc_pos_acc
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
@@ -500,8 +464,7 @@ def stats(policy, train_batch):
         "max_q": tf.reduce_max(policy.q_t),
         "min_q": tf.reduce_min(policy.q_t),
         "disc_loss": tf.reduce_mean(policy.disc_loss),
-        "disc_neg_acc": tf.reduce_mean(policy.disc_neg_acc),
-        "disc_pos_acc": tf.reduce_mean(policy.disc_pos_acc),
+        "disc_acc": tf.reduce_mean(policy.disc_acc),
     }
 
 
