@@ -194,10 +194,10 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
         q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
         # Diversity reward
-        d_neg_tp1 = model.get_d_values(model_out_tp1)
-        log_d_neg_tp1 = tf.nn.log_softmax(d_neg_tp1, axis=1)
-        own_log_d_neg_tp1 = tf.split(log_d_neg_tp1, 2, axis=1)[AGENT_LABEL]
-        q_tp1_best += model.beta * tf.squeeze(own_log_d_neg_tp1, axis=1)
+        d_tp1 = model.get_d_values(model_out_tp1)
+        log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
+        own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
+        q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
         q_tp1_best_masked = \
             (1.0 - tf.cast(train_batch[SampleBatch.DONES], tf.float32)) * \
             q_tp1_best
@@ -246,8 +246,8 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
         # Diversity reward
-        d_neg_tp1 = model.get_d_values(model_out_tp1)["neg"]
-        log_d_tp1 = tf.nn.log_softmax(d_neg_tp1, axis=1)
+        d_tp1 = model.get_d_values(model_out_tp1)
+        log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
         own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
         q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
         q_tp1_best_masked = (1.0 - tf.cast(train_batch[SampleBatch.DONES],
@@ -289,6 +289,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
                     tf.stop_gradient(policy_t), -model.log_alpha *
                     tf.stop_gradient(log_pis_t + model.target_entropy)),
                 axis=-1))
+        entropy = -tf.reduce_mean(tf.reduce_sum(tf.multiply(policy_t, log_pis_t), axis=-1))
         actor_loss = tf.reduce_mean(
             tf.reduce_sum(
                 tf.multiply(
@@ -301,6 +302,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         alpha_loss = -tf.reduce_mean(
             model.log_alpha *
             tf.stop_gradient(log_pis_t + model.target_entropy))
+        entropy = action_dist_class.entropy()
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
 
     # discrimination
@@ -325,7 +327,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.target_entropy = model.target_entropy
     policy.disc_loss = disc_loss
     policy.disc_acc = disc_accuracy
-    # policy.disc_pos_acc = disc_pos_acc
+    policy.entropy = entropy
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
@@ -465,6 +467,7 @@ def stats(policy, train_batch):
         "min_q": tf.reduce_min(policy.q_t),
         "disc_loss": tf.reduce_mean(policy.disc_loss),
         "disc_acc": tf.reduce_mean(policy.disc_acc),
+        "entropy": tf.reduce_mean(policy.entropy),
     }
 
 

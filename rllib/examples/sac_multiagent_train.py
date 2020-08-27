@@ -43,6 +43,7 @@ def get_parser():
     parser.add_argument("--buffer_size", type=int, default=1000000)
     parser.add_argument("--entropy_scale", type=float, default=1.)
     parser.add_argument("--target_acc", type=float, default=0.5)
+    parser.add_argument("--entropy_learning_rate", type=float, default=3e-4)
     return parser
 
 
@@ -64,7 +65,7 @@ def callback_builder():
             agent_id: str, policy_id: str, policies: Dict[str, Policy],
             postprocessed_batch: SampleBatch,
             original_batches: Dict[str, SampleBatch], **kwargs):
-            return
+            pass
 
         def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
             pass
@@ -127,6 +128,9 @@ def get_config(args):
         "buffer_size": args.buffer_size,
         "entropy_scale": args.entropy_scale,
         "target_acc": args.target_acc,
+        "optimization": {
+            "entropy_learning_rate": args.entropy_learning_rate,
+        },
     }
 
 
