@@ -302,7 +302,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         alpha_loss = -tf.reduce_mean(
             model.log_alpha *
             tf.stop_gradient(log_pis_t + model.target_entropy))
-        entropy = action_dist_class.entropy()
+        entropy = -tf.reduce_mean(log_pis_t)
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
 
     # discrimination
