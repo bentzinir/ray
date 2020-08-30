@@ -79,6 +79,7 @@ DEFAULT_CONFIG = with_common_config({
         "actor_learning_rate": 3e-4,
         "critic_learning_rate": 3e-4,
         "entropy_learning_rate": 3e-4,
+        "beta_learning_rate": 3e-4,
     },
     # If not None, clip gradients during optimization at this value.
     "grad_clip": None,

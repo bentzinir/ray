@@ -137,6 +137,8 @@ class SACMATFModel(TFModelV2):
             # See [1] (README.md).
             else:
                 target_entropy = -np.prod(action_space.shape)
+        if not self.discrete:
+            assert entropy_scale == 1, "entropy scale should not be used in continuous mode"
         target_entropy = entropy_scale * target_entropy
         self.target_entropy = target_entropy
 

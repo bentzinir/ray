@@ -44,6 +44,7 @@ def get_parser():
     parser.add_argument("--entropy_scale", type=float, default=1.)
     parser.add_argument("--target_acc", type=float, default=0.5)
     parser.add_argument("--entropy_learning_rate", type=float, default=3e-4)
+    parser.add_argument("--beta_learning_rate", type=float, default=3e-4)
     parser.add_argument("--shuffle_data", action="store_true")
     return parser
 
@@ -132,7 +133,8 @@ def get_config(args):
         "target_acc": args.target_acc,
         "shuffle_data": args.shuffle_data,
         "optimization": {
-            # "entropy_learning_rate": args.entropy_learning_rate,
+            "entropy_learning_rate": args.entropy_learning_rate,
+            "beta_learning_rate": args.beta_learning_rate,
         },
     }
 
