@@ -29,11 +29,11 @@ def get_parser():
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--batch_scale", action="store_true")
     parser.add_argument("--target_entropy", type=float, default=None)
     parser.add_argument("--ensemble_grid_search", action="store_true")
     parser.add_argument("--asymmetric", action="store_true")
     parser.add_argument("--local_mode", action="store_true")
-    parser.add_argument("--experience_masking", action="store_true")
     parser.add_argument("--alpha", type=float, default=None)
     parser.add_argument("--beta", type=float, default=None)
     parser.add_argument("--alpha_grid_search", action="store_true")
@@ -44,6 +44,7 @@ def get_parser():
     parser.add_argument("--entropy_scale", type=float, default=1.)
     parser.add_argument("--target_acc", type=float, default=0.5)
     parser.add_argument("--entropy_learning_rate", type=float, default=3e-4)
+    parser.add_argument("--shuffle_data", action="store_true")
     return parser
 
 
@@ -84,8 +85,9 @@ def central_critic_observer(agent_obs, **kw):
 
 
 def get_config(args):
-    if args.experience_masking:
+    if args.batch_scale:
         batch_scale = args.ensemble_size
+        print(f"======Scaling Batch size: {args.ensemble_size}======")
     else:
         batch_scale = 1
 
@@ -128,8 +130,9 @@ def get_config(args):
         "buffer_size": args.buffer_size,
         "entropy_scale": args.entropy_scale,
         "target_acc": args.target_acc,
+        "shuffle_data": args.shuffle_data,
         "optimization": {
-            "entropy_learning_rate": args.entropy_learning_rate,
+            # "entropy_learning_rate": args.entropy_learning_rate,
         },
     }
 

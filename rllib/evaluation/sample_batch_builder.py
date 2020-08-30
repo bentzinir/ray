@@ -191,7 +191,7 @@ class MultiAgentSampleBatchBuilder:
                     "Batches sent to postprocessing must only contain steps "
                     "from a single trajectory.", pre_batch)
             post_batches[agent_id] = policy.postprocess_trajectory(
-                pre_batch, other_batches, episode)
+                pre_batch.copy(), other_batches, episode)
             # Call the Policy's Exploration's postprocess method.
             if getattr(policy, "exploration", None) is not None:
                 policy.exploration.postprocess_trajectory(
