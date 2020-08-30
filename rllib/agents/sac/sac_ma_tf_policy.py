@@ -497,7 +497,7 @@ class ActorCriticOptimizerMixin:
             self._disc_optimizer = tf.keras.optimizers.Adam(
                 learning_rate=config["optimization"]["critic_learning_rate"])
             self._beta_optimizer = tf.keras.optimizers.Adam(
-                learning_rate=config["optimization"]["entropy_learning_rate"])
+                learning_rate=config["optimization"]["beta_learning_rate"])
         else:
             self.global_step = tf1.train.get_or_create_global_step()
             self._actor_optimizer = tf1.train.AdamOptimizer(
@@ -517,7 +517,7 @@ class ActorCriticOptimizerMixin:
             self._disc_optimizer = tf1.train.AdamOptimizer(
                 learning_rate=config["optimization"]["critic_learning_rate"])
             self._beta_optimizer = tf1.train.AdamOptimizer(
-                learning_rate=config["optimization"]["entropy_learning_rate"])
+                learning_rate=config["optimization"]["beta_learning_rate"])
 
 
 def setup_early_mixins(policy, obs_space, action_space, config):
