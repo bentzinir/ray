@@ -127,6 +127,7 @@ DEFAULT_CONFIG = with_common_config({
     "asymmetric": False,
     "entropy_scale": 1,
     "target_acc": None,
+    "shuffle_data": False,
 })
 # __sphinx_doc_end__
 # yapf: enable

@@ -97,25 +97,27 @@ def postprocess_trajectory(policy,
                            sample_batch,
                            other_agent_batches=None,
                            episode=None):
-    if 'agent_id' not in sample_batch:
-        sample_batch["disc_valid"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
-        sample_batch["disc_label"] = np.zeros_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
-        print('agent_id not in sample_batch!')
-    else:
+    if other_agent_batches is not None:
+        for opponent_id in other_agent_batches.keys():
+            opponent_batch = other_agent_batches[opponent_id][1]
+            for key in opponent_batch.keys():
+                sample_batch[key] = np.append(sample_batch[key], opponent_batch[key], axis=0)
+    sample_batch["disc_valid"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    sample_batch["disc_label"] = np.zeros_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
+    sample_batch["own_experience"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    if 'agent_id' in sample_batch:
         agent_id = sample_batch["agent_id"][0]
-        random_id = random.choice([agent_id] + [k for k in other_agent_batches.keys()])
-        if random_id != agent_id:
-            sample_batch = other_agent_batches[random_id][1].copy()
-        ones_vec = np.ones_like(sample_batch[SampleBatch.REWARDS])
-        if random_id < agent_id:
-            sample_batch["disc_valid"] = ones_vec
-            sample_batch["disc_label"] = OPPONENT_LABEL * ones_vec.astype(np.int32)
-        elif random_id == agent_id:
-            sample_batch["disc_valid"] = ones_vec
-            sample_batch["disc_label"] = AGENT_LABEL * ones_vec.astype(np.int32)
-        else:
-            sample_batch["disc_valid"] = 0 * ones_vec
-            sample_batch["disc_label"] = 0 * ones_vec.astype(np.int32)
+        for i, member_id in enumerate(sample_batch['agent_id']):
+            if member_id < agent_id:
+                sample_batch["disc_valid"][i] = 1.
+                sample_batch["disc_label"][i] = OPPONENT_LABEL
+            elif member_id == agent_id:
+                sample_batch["disc_valid"][i] = 1.
+                sample_batch["disc_label"][i] = AGENT_LABEL
+                sample_batch["own_experience"][i] = 1.
+        if policy.config["shuffle_data"]:
+            j = random.choice(range(len(sample_batch['t'])))
+            sample_batch = sample_batch.slice(j, j+1)
     return postprocess_nstep_and_prio(policy, sample_batch)
 
 
@@ -284,7 +286,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # loss terms (no expectations needed).
     if model.discrete:
         alpha_loss = tf.reduce_mean(
-            tf.reduce_sum(
+            train_batch["own_experience"] * tf.reduce_sum(
                 tf.multiply(
                     tf.stop_gradient(policy_t), -model.log_alpha *
                     tf.stop_gradient(log_pis_t + model.target_entropy)),
@@ -300,18 +302,19 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
                 axis=-1))
     else:
         alpha_loss = -tf.reduce_mean(
-            model.log_alpha *
+            train_batch["own_experience"] * model.log_alpha *
             tf.stop_gradient(log_pis_t + model.target_entropy))
         entropy = -tf.reduce_mean(log_pis_t)
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
 
     # discrimination
     d_t = model.get_d_values(model_out_t)
+    valid_count = 1e-4 + tf.reduce_sum(train_batch["disc_valid"])
     disc_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
-    disc_loss = tf.reduce_mean(train_batch["disc_valid"] * disc_loss_vec)
+    disc_loss = tf.reduce_sum(train_batch["disc_valid"] * disc_loss_vec) / valid_count
     disc_accuracy_vec = tf.math.equal(train_batch["disc_label"], tf.argmax(d_t, axis=1, output_type=tf.int32))
     disc_accuracy_vec = tf.cast(disc_accuracy_vec, tf.float32) * train_batch["disc_valid"]
-    disc_accuracy = tf.reduce_sum(disc_accuracy_vec) / (1e-4 + tf.reduce_sum(train_batch["disc_valid"]))
+    disc_accuracy = tf.reduce_sum(disc_accuracy_vec) / valid_count
     beta_loss = model.beta * tf.stop_gradient(disc_accuracy - model.target_acc)
 
     # save for stats function
