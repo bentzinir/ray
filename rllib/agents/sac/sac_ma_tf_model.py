@@ -66,6 +66,8 @@ class SACMATFModel(TFModelV2):
             action_outs = 2 * self.action_dim
             q_outs = 1
 
+        self.d_outs = 2 * action_outs if self.discrete and divergence_type == 'state_action' else 2
+        self.d_concat_input = divergence_type == 'state_action' and not self.discrete
         self.divergence_type = divergence_type
         self.model_out = tf.keras.layers.Input(
             shape=(self.num_outputs, ), name="model_out")
@@ -150,7 +152,7 @@ class SACMATFModel(TFModelV2):
         # discriminator
         d_net = tf.keras.Sequential(([
                 tf.keras.layers.Concatenate(axis=1),
-            ] if self.divergence_type == 'state_action' else []) +
+            ] if self.d_concat_input else []) +
             [tf.keras.layers.Dense(
             units=units,
             activation=getattr(tf.nn, critic_hidden_activation, None),
@@ -158,18 +160,14 @@ class SACMATFModel(TFModelV2):
                                         for i, units in enumerate(critic_hiddens)
                                     ] + [
                                         tf.keras.layers.Dense(
-                                            units=2, activation=None, name="d_out")
+                                            units=self.d_outs, activation=None, name="d_out")
                                     ])
 
-        if divergence_type == 'state':
-            print("=========== STATE Divergence ===========")
-            self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
-        elif divergence_type == 'state_action':
-            print("=========== STATE ACTION Divergence ===========")
+        if self.d_concat_input:
             self.d_net = tf.keras.Model([self.model_out, self.actions_input],
                                         d_net([self.model_out, self.actions_input]))
         else:
-            raise ValueError(f"Unrecognized divergence type: {divergence_type}")
+            self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
 
         self.register_variables(self.d_net.variables)
         if beta is not None:
@@ -238,12 +236,11 @@ class SACMATFModel(TFModelV2):
         return self.action_model(model_out)
 
     def get_d_values(self, model_out, actions):
-        if self.divergence_type == 'state':
-            return self.d_net(model_out)
-        elif self.divergence_type == 'state_action':
-            return self.d_net([model_out, actions])
+        if self.d_concat_input:
+            d_out = self.d_net([model_out, actions])
         else:
-            raise ValueError
+            d_out = self.d_net(model_out)
+        return tf.reshape(d_out, [-1, 2, int(self.d_outs/2)])
 
     def policy_variables(self):
         """Return the list of variables for the policy net."""
