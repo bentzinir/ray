@@ -32,12 +32,13 @@ class SACMATFModel(TFModelV2):
                  twin_q=False,
                  initial_alpha=1.0,
                  # TODO: debugging initial beta
-                 initial_beta=1e-2,
+                 initial_beta=1.0,
                  alpha=None,
                  beta=None,
                  target_entropy=None,
                  target_acc=0.5,
-                 entropy_scale=1):
+                 entropy_scale=1,
+                 divergence_type="state_action"):
         """Initialize variables of this model.
 
         Extra model kwargs:
@@ -65,6 +66,7 @@ class SACMATFModel(TFModelV2):
             action_outs = 2 * self.action_dim
             q_outs = 1
 
+        self.divergence_type = divergence_type
         self.model_out = tf.keras.layers.Input(
             shape=(self.num_outputs, ), name="model_out")
         self.action_model = tf.keras.Sequential([
@@ -146,7 +148,10 @@ class SACMATFModel(TFModelV2):
 
         ###################################
         # discriminator
-        d_net = tf.keras.Sequential([tf.keras.layers.Dense(
+        d_net = tf.keras.Sequential(([
+                tf.keras.layers.Concatenate(axis=1),
+            ] if self.divergence_type == 'state_action' else []) +
+            [tf.keras.layers.Dense(
             units=units,
             activation=getattr(tf.nn, critic_hidden_activation, None),
             name="d_hidden_{}".format(i))
@@ -155,7 +160,17 @@ class SACMATFModel(TFModelV2):
                                         tf.keras.layers.Dense(
                                             units=2, activation=None, name="d_out")
                                     ])
-        self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
+
+        if divergence_type == 'state':
+            print("=========== STATE Divergence ===========")
+            self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
+        elif divergence_type == 'state_action':
+            print("=========== STATE ACTION Divergence ===========")
+            self.d_net = tf.keras.Model([self.model_out, self.actions_input],
+                                        d_net([self.model_out, self.actions_input]))
+        else:
+            raise ValueError(f"Unrecognized divergence type: {divergence_type}")
+
         self.register_variables(self.d_net.variables)
         if beta is not None:
             initial_beta = beta
@@ -222,8 +237,13 @@ class SACMATFModel(TFModelV2):
         """
         return self.action_model(model_out)
 
-    def get_d_values(self, model_out):
-        return self.d_net(model_out)
+    def get_d_values(self, model_out, actions):
+        if self.divergence_type == 'state':
+            return self.d_net(model_out)
+        elif self.divergence_type == 'state_action':
+            return self.d_net([model_out, actions])
+        else:
+            raise ValueError
 
     def policy_variables(self):
         """Return the list of variables for the policy net."""
