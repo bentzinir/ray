@@ -104,17 +104,17 @@ def postprocess_trajectory(policy,
             opponent_batch = other_agent_batches[opponent_id][1]
             for key in opponent_batch.keys():
                 sample_batch[key] = np.append(sample_batch[key], opponent_batch[key], axis=0)
-    sample_batch["disc_valid"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
-    sample_batch["disc_label"] = np.zeros_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
+    sample_batch["disc_valid"] = np.ones_like(sample_batch[SampleBatch.REWARDS])
+    sample_batch["disc_label"] = AGENT_LABEL * np.ones_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
     sample_batch["own_experience"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
     if 'agent_id' in sample_batch:
         agent_id = sample_batch["agent_id"][0]
         for i, member_id in enumerate(sample_batch['agent_id']):
             if member_id < agent_id:
-                sample_batch["disc_valid"][i] = 1.
+                # sample_batch["disc_valid"][i] = 1.
                 sample_batch["disc_label"][i] = OPPONENT_LABEL
             elif member_id == agent_id:
-                sample_batch["disc_valid"][i] = 1.
+                # sample_batch["disc_valid"][i] = 1.
                 sample_batch["disc_label"][i] = AGENT_LABEL
                 sample_batch["own_experience"][i] = 1.
         if policy.config["shuffle_data"]:
@@ -198,16 +198,19 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
         q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
         # Diversity reward
-        d_tp1 = model.get_d_values(model_out_tp1, train_batch[SampleBatch.ACTIONS])
-        # Slice actually selected action in case of state_action divergence
-        if d_tp1.shape.as_list()[2] > 1:
+        if model.divergence_type == 'state_action':
+            # calculated based on s_t, a_t. First extract discrimination for all actions in time t
+            discrimination = model.get_d_values(model_out_t, actions=None)
+            # Slice actually selected action a_t
             selected_action_3d_mask = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
-            d_tp1 = tf.reduce_sum(d_tp1 * selected_action_3d_mask, axis=2)
+            discrimination = tf.reduce_sum(discrimination * selected_action_3d_mask, axis=2)
         else:
-            d_tp1 = tf.squeeze(d_tp1, axis=2)
-        log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
-        own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
-        q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
+            # calculated based on s_tp1
+            discrimination = model.get_d_values(model_out_tp1, actions=None)
+            discrimination = tf.squeeze(discrimination, axis=2)
+        log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
+        agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
+        q_tp1_best += model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
         q_tp1_best_masked = \
             (1.0 - tf.cast(train_batch[SampleBatch.DONES], tf.float32)) * \
             q_tp1_best
@@ -256,11 +259,16 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
         # Diversity reward
-        d_tp1 = model.get_d_values(model_out_tp1, train_batch[SampleBatch.ACTIONS])
-        d_tp1 = tf.squeeze(d_tp1, axis=2)
-        log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
-        own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
-        q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
+        if model.divergence_type == 'state_action':
+            # calculate based on s_t, a_t
+            discrimination = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
+        else:
+            # calculate based on s_tp1
+            discrimination = model.get_d_values(model_out_tp1, actions=None)
+        discrimination = tf.squeeze(discrimination, axis=2)
+        log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
+        agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
+        q_tp1_best += model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
         q_tp1_best_masked = (1.0 - tf.cast(train_batch[SampleBatch.DONES],
                                            tf.float32)) * q_tp1_best
 
@@ -345,6 +353,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.disc_loss = disc_loss
     policy.disc_acc = disc_accuracy
     policy.entropy = entropy
+    policy.agent_discrimination_logit = agent_discrimination_logit
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
@@ -485,6 +494,7 @@ def stats(policy, train_batch):
         "disc_loss": tf.reduce_mean(policy.disc_loss),
         "disc_acc": tf.reduce_mean(policy.disc_acc),
         "entropy": tf.reduce_mean(policy.entropy),
+        "agent_discrimination_logit": tf.reduce_mean(policy.agent_discrimination_logit),
     }
 
 
