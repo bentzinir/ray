@@ -67,7 +67,8 @@ def build_sac_model(policy, obs_space, action_space, config):
         alpha=config["alpha"],
         beta=config["beta"],
         entropy_scale=config["entropy_scale"],
-        target_acc=config["target_acc"],)
+        target_acc=config["target_acc"],
+        divergence_type=config["divergence_type"],)
 
     policy.target_model = ModelCatalog.get_model_v2(
         obs_space=obs_space,
@@ -88,7 +89,8 @@ def build_sac_model(policy, obs_space, action_space, config):
         alpha=config["alpha"],
         beta=config["beta"],
         entropy_scale=config["entropy_scale"],
-        target_acc=config["target_acc"],)
+        target_acc=config["target_acc"],
+        divergence_type=config["divergence_type"],)
 
     return policy.model
 
@@ -196,7 +198,8 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
         q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
         # Diversity reward
-        d_tp1 = model.get_d_values(model_out_tp1)
+        d_tp1 = model.get_d_values(model_out_tp1, train_batch[SampleBatch])
+        assert False, "state action diversity penalty is yet implemented in discrete mode"
         log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
         own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
         q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
@@ -248,7 +251,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
         # Diversity reward
-        d_tp1 = model.get_d_values(model_out_tp1)
+        d_tp1 = model.get_d_values(model_out_tp1, train_batch[SampleBatch.ACTIONS])
         log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
         own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
         q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
@@ -308,7 +311,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
 
     # discrimination
-    d_t = model.get_d_values(model_out_t)
+    d_t = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
     valid_count = 1e-4 + tf.reduce_sum(train_batch["disc_valid"])
     disc_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
     disc_loss = tf.reduce_sum(train_batch["disc_valid"] * disc_loss_vec) / valid_count

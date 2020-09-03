@@ -46,6 +46,7 @@ def get_parser():
     parser.add_argument("--entropy_learning_rate", type=float, default=3e-4)
     parser.add_argument("--beta_learning_rate", type=float, default=3e-4)
     parser.add_argument("--shuffle_data", action="store_true")
+    parser.add_argument("--divergence_type", type=str, default="none")
     return parser
 
 
@@ -136,6 +137,7 @@ def get_config(args):
             "entropy_learning_rate": args.entropy_learning_rate,
             "beta_learning_rate": args.beta_learning_rate,
         },
+        "divergence_type": args.divergence_type,
     }
 
 
