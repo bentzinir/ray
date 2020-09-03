@@ -198,8 +198,13 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
         q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
         # Diversity reward
-        d_tp1 = model.get_d_values(model_out_tp1, train_batch[SampleBatch])
-        assert False, "state action diversity penalty is yet implemented in discrete mode"
+        d_tp1 = model.get_d_values(model_out_tp1, train_batch[SampleBatch.ACTIONS])
+        # Slice actually selected action in case of state_action divergence
+        if d_tp1.shape.as_list()[2] > 1:
+            selected_action_3d_mask = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
+            d_tp1 = tf.reduce_sum(d_tp1 * selected_action_3d_mask, axis=2)
+        else:
+            d_tp1 = tf.squeeze(d_tp1, axis=2)
         log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
         own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
         q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
@@ -252,6 +257,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
         # Diversity reward
         d_tp1 = model.get_d_values(model_out_tp1, train_batch[SampleBatch.ACTIONS])
+        d_tp1 = tf.squeeze(d_tp1, axis=2)
         log_d_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
         own_log_d_tp1 = tf.split(log_d_tp1, 2, axis=1)[AGENT_LABEL]
         q_tp1_best += model.beta * tf.squeeze(own_log_d_tp1, axis=1)
@@ -312,6 +318,11 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
     # discrimination
     d_t = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
+    if d_t.shape.as_list()[2] > 1:
+        assert model.discrete
+        d_t = tf.reduce_sum(d_t * selected_action_3d_mask, axis=2)
+    else:
+        d_t = tf.squeeze(d_t, axis=2)
     valid_count = 1e-4 + tf.reduce_sum(train_batch["disc_valid"])
     disc_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
     disc_loss = tf.reduce_sum(train_batch["disc_valid"] * disc_loss_vec) / valid_count
