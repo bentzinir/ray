@@ -3,6 +3,7 @@ from gym.spaces import Box, Discrete, Tuple
 import logging
 import random
 import numpy as np
+import cv2
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +43,17 @@ class MazeEnv(gym.Env):
                     self.end_pos = (x, y)
         logger.info("Start pos {} end pos {}".format(self.start_pos,
                                                      self.end_pos))
-        # self.observation_space = Tuple([
-        #     Box(0, 100, shape=(2, )),  # (x, y)
-        #     Discrete(4),  # wind direction (N, E, S, W)
-        # ])
-        self.observation_space = Box(0, 100, shape=(2,))
-        self.action_space = Discrete(5)  # whether to move or not
-        self.viewer = None
         self.h = len(self.map)
         self.w = len(self.map[0])
+        if env_config["spatial"]:
+            self.observation_space = Box(0, 255, shape=(42, 42, 3))
+            self.spatial = True
+        else:
+            self.observation_space = Box(0, 100, shape=(2,))
+            self.spatial = False
+        self.action_space = Discrete(5)  # whether to move or not
+        self.viewer = None
+
         self.bg = 255 * np.ones((self.h, self.w, 3), dtype=np.uint8)
         for ridx in range(self.h):
             for cidx in range(self.w):
@@ -65,6 +68,8 @@ class MazeEnv(gym.Env):
         # self.wind_direction = random.choice([0, 1, 2, 3])
         self.pos = self.start_pos
         self.num_steps = 0
+        if self.spatial:
+            return self._get_image()
         return np.array(self.pos)
 
     def step(self, action, verbose=False):
@@ -80,7 +85,11 @@ class MazeEnv(gym.Env):
             print(f"step: {self.num_steps}, pos: {self.pos}")
         # return (np.array(self.pos), float(10 * int(at_goal)), done, {})
         reward = 1. if at_goal else 0.
-        return np.array(self.pos), reward, done, {}
+        if self.spatial:
+            obs = self._get_image()
+        else:
+            obs = np.array(self.pos)
+        return obs, reward, done, {}
 
     def _get_new_pos(self, pos, direction):
         new_pos = pos
@@ -125,7 +134,9 @@ class MazeEnv(gym.Env):
         self.frames[self.member] = (alpha * self.frames[self.member] + (1 - alpha) * frame_t).astype(np.uint8)
         # self.frame[self.pos] = self.member_color()
         frames = [frame_t] + [self.frames[i] for i in self.member_list]
-        return np.concatenate(frames, axis=0)
+        frames = np.concatenate(frames, axis=0)
+        frames = cv2.resize(frames, dsize=(42, 42), interpolation=cv2.INTER_NEAREST)
+        return frames
 
     def render(self, mode='human'):
         img = self._get_image()

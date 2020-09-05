@@ -2,7 +2,33 @@ import gym
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.tests.test_rollout_worker import MockEnv, MockEnv2
 import numpy as np
-import random
+from ray.rllib.env.atari_wrappers import wrap_deepmind, is_atari
+
+
+def get_wrap_func(env):
+    if is_atari(env) and not model_config.get("custom_preprocessor") and preprocessor_pref == "deepmind":
+
+        # Deepmind wrappers already handle all preprocessing
+        preprocessing_enabled = False
+
+        if clip_rewards is None:
+            clip_rewards = True
+        def wrap(env):
+            env = wrap_deepmind(
+                env,
+                dim=model_config.get("dim"),
+                framestack=model_config.get("framestack"))
+            if monitor_path:
+                from gym import wrappers
+                env = wrappers.Monitor(env, monitor_path, resume=True)
+            return env
+    else:
+        def wrap(env):
+            if monitor_path:
+                from gym import wrappers
+                env = wrappers.Monitor(env, monitor_path, resume=True)
+            return env
+    return wrap
 
 
 def make_multiagent(env_name_or_creator):
@@ -10,6 +36,7 @@ def make_multiagent(env_name_or_creator):
         def __init__(self, config):
             self.nagents = config.pop("num_agents", 1)
             self.asymmetric = config.pop("asymmetric", True)
+
             if isinstance(env_name_or_creator, str):
                 self.agents = [
                     gym.make(env_name_or_creator) for _ in range(self.nagents)
@@ -17,6 +44,7 @@ def make_multiagent(env_name_or_creator):
             else:
                 self.agents = [env_name_or_creator(config) for _ in range(self.nagents)]
             normalize_actions = config.pop("normalize_actions", True)
+            wrap = get_wrap_func(self.agents[0])
             if normalize_actions:
                 from ray.rllib.env.normalize_actions import NormalizeActionWrapper
                 self.agents = [NormalizeActionWrapper(agent) for agent in self.agents]
