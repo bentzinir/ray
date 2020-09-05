@@ -362,11 +362,12 @@ class RolloutWorker(ParallelIteratorWorker):
 
         if hasattr(self.env, "agents"):
             self.env.agents = [wrap(a) for a in self.env.agents]
+            assert isinstance(policy, dict)
             for aidx in range(self.env.nagents):
                 policy_name = policy_mapping_fn(aidx)
-                policy_a_list = list(policy_config["multiagent"]["policies"][policy_name])
+                policy_a_list = list(policy[policy_name])
                 policy_a_list[1] = self.env.agents[aidx].observation_space
-                policy_config["multiagent"]["policies"][policy_name] = tuple(policy_a_list)
+                policy[policy_name] = tuple(policy_a_list)
         else:
             self.env: EnvType = wrap(self.env)
 
