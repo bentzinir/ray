@@ -47,6 +47,7 @@ def get_parser():
     parser.add_argument("--beta_learning_rate", type=float, default=3e-4)
     parser.add_argument("--shuffle_data", action="store_true")
     parser.add_argument("--divergence_type", type=str, default="none")
+    parser.add_argument("--spatial", action="store_true")
     return parser
 
 
@@ -97,7 +98,7 @@ def get_config(args):
     if isinstance(args.env, str):
         single_env = gym.make(args.env)
     else:
-        single_env = args.env()
+        single_env = args.env({"spatial": args.spatial})
     obs_space = single_env.observation_space
     act_space = single_env.action_space
 
@@ -112,6 +113,7 @@ def get_config(args):
             "num_agents": args.ensemble_size,
             "normalize_actions": True,
             "asymmetric": args.asymmetric,
+            "spatial": args.spatial,
             },
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
