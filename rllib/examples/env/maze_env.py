@@ -45,7 +45,7 @@ class MazeEnv(gym.Env):
                                                      self.end_pos))
         self.h = len(self.map)
         self.w = len(self.map[0])
-        if env_config["spatial"]:
+        if "config" in env_config and env_config["spatial"]:
             self.observation_space = Box(0, 255, shape=(42, 42, 3))
             self.spatial = True
         else:

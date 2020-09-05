@@ -323,12 +323,17 @@ class RolloutWorker(ParallelIteratorWorker):
 
         self.env = _validate_env(env_creator(env_context))
 
-        if isinstance(self.env, (BaseEnv, MultiAgentEnv)):
+        if hasattr(self.env, "agents"):
+            sample_env = self.env.agents[0]
+        else:
+            sample_env = self.env
+
+        if isinstance(sample_env, (BaseEnv, MultiAgentEnv)):
 
             def wrap(env):
                 return env  # we can't auto-wrap these env types
 
-        elif is_atari(self.env) and \
+        elif is_atari(sample_env) and \
                 not model_config.get("custom_preprocessor") and \
                 preprocessor_pref == "deepmind":
 
@@ -355,7 +360,15 @@ class RolloutWorker(ParallelIteratorWorker):
                     env = wrappers.Monitor(env, monitor_path, resume=True)
                 return env
 
-        self.env: EnvType = wrap(self.env)
+        if hasattr(self.env, "agents"):
+            self.env.agents = [wrap(a) for a in self.env.agents]
+            for aidx in range(self.env.nagents):
+                policy_name = policy_mapping_fn(aidx)
+                policy_a_list = list(policy_config["multiagent"]["policies"][policy_name])
+                policy_a_list[1] = self.env.agents[aidx].observation_space
+                policy_config["multiagent"]["policies"][policy_name] = tuple(policy_a_list)
+        else:
+            self.env: EnvType = wrap(self.env)
 
         if 'ensemble_size' in policy_config:
             from ray.rllib.env.ensemble import Ensemble
