@@ -10,9 +10,9 @@ def _import_sac():
     return sac.SACTrainer
 
 
-def _import_sac_ensemble():
+def _import_sac_ma():
     from ray.rllib.agents import sac
-    return sac.SACEnsembleTrainer
+    return sac.SACMATrainer
 
 
 def _import_appo():
@@ -107,7 +107,7 @@ def _import_maml():
 
 ALGORITHMS = {
     "SAC": _import_sac,
-    "SAC_Ensemble": _import_sac_ensemble,
+    "SACMA": _import_sac_ma,
     "DDPG": _import_ddpg,
     "APEX_DDPG": _import_apex_ddpg,
     "TD3": _import_td3,
