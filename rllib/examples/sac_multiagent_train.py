@@ -52,6 +52,7 @@ def get_parser():
     parser.add_argument("--divergence_type", type=str, default="none")
     parser.add_argument("--spatial", action="store_true")
     parser.add_argument("--vis_sleep", type=float, default=0.0)
+    parser.add_argument("--yaml_config", type=str, default="none")
     return parser
 
 
@@ -108,18 +109,8 @@ def get_config(args):
         single_env = args.env({"spatial": args.spatial})
     obs_space = single_env.observation_space
     act_space = single_env.action_space
-
-    if is_atari(single_env):
-        env_type = "atari"
-    elif args.env.__name__ == "MazeEnv":
-        if single_env.spatial:
-            env_type = "spatial-maze"
-        else:
-            env_type = "maze"
-    else:
-        env_type = "halfcheetah"
-    tuned_config_path = os.path.join(ray.__path__[0], "rllib/tuned_examples/sac", f"{env_type}-sac.yaml")
-    tuned_yaml = open(tuned_config_path)
+    assert args.yaml_config != "none"
+    tuned_yaml = open(args.yaml_config)
     tuned_config = yaml.load(tuned_yaml, Loader=yaml.FullLoader)
 
     (k, tuned_config), = tuned_config.items()
@@ -160,8 +151,8 @@ def get_config(args):
             "beta_learning_rate": args.beta_learning_rate,
         },
         "divergence_type": args.divergence_type,
-        "prioritized_replay": False,  # TODO: consider setting back to True
-        "compress_observations": True,
+        "prioritized_replay": False,  # todo: consider setting back to True
+        "compress_observations": np.issubdtype(single_env.observation_space.dtype, np.integer),
     }
     config = update(config, override_config)
     return config
