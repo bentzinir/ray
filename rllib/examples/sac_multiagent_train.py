@@ -10,6 +10,11 @@ from ray.rllib.env import BaseEnv
 from ray.rllib.policy import Policy
 from typing import Dict
 from ray.rllib.examples.env.multi_agent import make_multiagent
+import yaml
+import os
+from ray.rllib.env.atari_wrappers import is_atari
+import collections.abc
+import numpy as np
 
 
 def get_parser():
@@ -18,21 +23,19 @@ def get_parser():
     parser.add_argument("--num-cpus", type=int, default=0)
     parser.add_argument("--env", type=str, default="none")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--tfe", action="store_true")
+    parser.add_argument("--framework", type=str, default="none")
     parser.add_argument("--shared_actor", action="store_true")
     parser.add_argument("--ensemble_size", type=int, default=1)
     parser.add_argument("--timescale", type=int, default=10000)
     parser.add_argument("--timescale_grid_search", action="store_true")
     parser.add_argument("--timesteps", type=int, default=1000000)
     parser.add_argument("--verbose", type=int, default=1)
-    parser.add_argument("--num_workers", type=int, default=1)
+    parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--batch_scale", action="store_true")
     parser.add_argument("--target_entropy", type=float, default=None)
     parser.add_argument("--ensemble_grid_search", action="store_true")
-    parser.add_argument("--asymmetric", action="store_true")
     parser.add_argument("--local_mode", action="store_true")
     parser.add_argument("--alpha", type=float, default=None)
     parser.add_argument("--beta", type=float, default=None)
@@ -48,7 +51,17 @@ def get_parser():
     parser.add_argument("--shuffle_data", action="store_true")
     parser.add_argument("--divergence_type", type=str, default="none")
     parser.add_argument("--spatial", action="store_true")
+    parser.add_argument("--vis_sleep", type=float, default=0.0)
     return parser
+
+
+def update(d, u):
+    for k, v in u.items():
+        if isinstance(v, collections.abc.Mapping):
+            d[k] = update(d.get(k, {}), v)
+        else:
+            d[k] = v
+    return d
 
 
 def callback_builder():
@@ -88,12 +101,6 @@ def central_critic_observer(agent_obs, **kw):
 
 
 def get_config(args):
-    if args.batch_scale:
-        batch_scale = args.ensemble_size
-        print(f"======Scaling Batch size: {args.ensemble_size}======")
-    else:
-        batch_scale = 1
-
     # Get obs- and action Spaces.
     if isinstance(args.env, str):
         single_env = gym.make(args.env)
@@ -102,35 +109,48 @@ def get_config(args):
     obs_space = single_env.observation_space
     act_space = single_env.action_space
 
+    if is_atari(single_env):
+        env_type = "atari"
+    elif args.env.__name__ == "MazeEnv":
+        if single_env.spatial:
+            env_type = "spatial-maze"
+        else:
+            env_type = "maze"
+    else:
+        env_type = "halfcheetah"
+    tuned_config_path = os.path.join(ray.__path__[0], "rllib/tuned_examples/sac", f"{env_type}-sac.yaml")
+    tuned_yaml = open(tuned_config_path)
+    tuned_config = yaml.load(tuned_yaml, Loader=yaml.FullLoader)
+
+    (k, tuned_config), = tuned_config.items()
+    config = tuned_config["config"]
+
     policies = {
         "policy_{}".format(i): (None, obs_space, act_space, {})
         for i in range(args.ensemble_size)
     }
 
-    return {
+    override_config = {
         'env': make_multiagent(args.env),
         "env_config": {
             "num_agents": args.ensemble_size,
-            "normalize_actions": True,
-            "asymmetric": args.asymmetric,
             "spatial": args.spatial,
+            # We normalize by 255 observations of any integer type
+            "normalize_obs": np.issubdtype(single_env.observation_space.dtype, np.integer),
             },
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
-        'framework': 'tfe' if args.tfe else 'tf',
+        'framework': args.framework,
         'target_entropy': args.target_entropy,
         "callbacks": callback_builder(),
-        'train_batch_size': batch_scale * args.batch_size,
         "multiagent": {
             "policies": policies,
             "policy_mapping_fn": (lambda x: f"policy_{x}"),
             "observation_fn": central_critic_observer,
         },
-        "normalize_actions": False,
         "alpha": args.alpha,
         "beta": args.beta,
         'gamma': args.gamma,
-        "asymmetric": args.asymmetric,
         "buffer_size": args.buffer_size,
         "entropy_scale": args.entropy_scale,
         "target_acc": args.target_acc,
@@ -140,7 +160,10 @@ def get_config(args):
             "beta_learning_rate": args.beta_learning_rate,
         },
         "divergence_type": args.divergence_type,
+        "prioritized_replay": False,  # TODO: consider setting back to True
     }
+    config = update(config, override_config)
+    return config
 
 
 def get_args():

@@ -45,8 +45,8 @@ class MazeEnv(gym.Env):
                                                      self.end_pos))
         self.h = len(self.map)
         self.w = len(self.map[0])
-        if "config" in env_config and env_config["spatial"]:
-            self.observation_space = Box(0, 255, shape=(42, 42, 3))
+        if "spatial" in env_config and env_config["spatial"]:
+            self.observation_space = Box(0, 255, shape=(42, 42, 3), dtype=np.uint8)
             self.spatial = True
         else:
             self.observation_space = Box(0, 100, shape=(2,))
@@ -69,14 +69,10 @@ class MazeEnv(gym.Env):
         self.pos = self.start_pos
         self.num_steps = 0
         if self.spatial:
-            return self._get_image()
+            return self._get_image(resize=True)
         return np.array(self.pos)
 
     def step(self, action, verbose=False):
-        # if action == 1:
-        #     self.pos = self._get_new_pos(self.pos, self.wind_direction)
-
-        # self.wind_direction = random.choice([0, 1, 2, 3])
         self.pos = self._get_new_pos(self.pos, action)
         self.num_steps += 1
         at_goal = self.pos == self.end_pos
@@ -86,7 +82,7 @@ class MazeEnv(gym.Env):
         # return (np.array(self.pos), float(10 * int(at_goal)), done, {})
         reward = 1. if at_goal else 0.
         if self.spatial:
-            obs = self._get_image()
+            obs = self._get_image(resize=True)
         else:
             obs = np.array(self.pos)
         return obs, reward, done, {}
@@ -124,7 +120,7 @@ class MazeEnv(gym.Env):
         else:
             raise ValueError
 
-    def _get_image(self, alpha=0.995):
+    def _get_image(self, resize=False, alpha=0.995):
         frame_t = self.bg.copy()
         frame_t[self.pos] =  [0, 255, 0] #self.member_color()
         # frame[self.end_pos] = [0, 0, 255]
@@ -135,7 +131,8 @@ class MazeEnv(gym.Env):
         # self.frame[self.pos] = self.member_color()
         frames = [frame_t] + [self.frames[i] for i in self.member_list]
         frames = np.concatenate(frames, axis=0)
-        frames = cv2.resize(frames, dsize=(42, 42), interpolation=cv2.INTER_NEAREST)
+        if resize:
+            frames = cv2.resize(frames, dsize=(42, 42), interpolation=cv2.INTER_NEAREST)
         return frames
 
     def render(self, mode='human'):

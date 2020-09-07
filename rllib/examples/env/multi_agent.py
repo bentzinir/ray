@@ -8,18 +8,16 @@ def make_multiagent(env_name_or_creator):
     class MultiEnv(MultiAgentEnv):
         def __init__(self, config):
             self.nagents = config.pop("num_agents", 1)
-            self.asymmetric = config.pop("asymmetric", True)
-
             if isinstance(env_name_or_creator, str):
                 self.agents = [
                     gym.make(env_name_or_creator) for _ in range(self.nagents)
                 ]
             else:
                 self.agents = [env_name_or_creator(config) for _ in range(self.nagents)]
-            normalize_actions = config.pop("normalize_actions", True)
-            if normalize_actions:
-                from ray.rllib.env.normalize_actions import NormalizeActionWrapper
-                self.agents = [NormalizeActionWrapper(agent) for agent in self.agents]
+            if config.pop("warp_obs", False):
+                from ray.rllib.env.atari_wrappers import WarpFrame
+                dim = config.pop("warp_dim", None)
+                self.agents = [WarpFrame(agent, dim=dim) for agent in self.agents]
             self.dones = set()
             self.observation_space = self.agents[0].observation_space
             self.action_space = self.agents[0].action_space
