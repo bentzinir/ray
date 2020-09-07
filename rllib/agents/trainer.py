@@ -606,6 +606,9 @@ class Trainer(Trainable):
 
             def normalize(env):
                 import gym  # soft dependency
+                if hasattr(env, "agents"):
+                    env.agents = [NormalizeActionWrapper(a) for a in env.agents]
+                    return env
                 if not isinstance(env, gym.Env):
                     raise ValueError(
                         "Cannot apply NormalizeActionActionWrapper to env of "
