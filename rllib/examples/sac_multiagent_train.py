@@ -23,7 +23,7 @@ def get_parser():
     parser.add_argument("--num-cpus", type=int, default=0)
     parser.add_argument("--env", type=str, default="none")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--framework", type=str, default="none")
+    parser.add_argument("--framework", type=str, default="tf")
     parser.add_argument("--shared_actor", action="store_true")
     parser.add_argument("--ensemble_size", type=int, default=1)
     parser.add_argument("--timescale", type=int, default=10000)
