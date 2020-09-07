@@ -161,6 +161,7 @@ def get_config(args):
         },
         "divergence_type": args.divergence_type,
         "prioritized_replay": False,  # TODO: consider setting back to True
+        "compress_observations": True,
     }
     config = update(config, override_config)
     return config
