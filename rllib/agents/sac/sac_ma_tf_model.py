@@ -66,8 +66,8 @@ class SACMATFModel(TFModelV2):
             action_outs = 2 * self.action_dim
             q_outs = 1
 
-        self.d_outs = 2 * action_outs if self.discrete and divergence_type == 'state_action' else 2
-        self.d_concat_input = divergence_type == 'state_action' and not self.discrete
+        self.d_outs = 2 * action_outs if self.discrete else 2
+        self.d_concat_input = not self.discrete
         self.divergence_type = divergence_type
         self.model_out = tf.keras.layers.Input(
             shape=(self.num_outputs, ), name="model_out")

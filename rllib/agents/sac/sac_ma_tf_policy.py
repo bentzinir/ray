@@ -367,17 +367,14 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # loss terms (no expectations needed).
     own_exp_sum = 1e-4 + tf.reduce_sum(train_batch["own_experience"])
     if model.discrete:
-        alpha_loss = tf.reduce_sum(
-            train_batch["own_experience"] * tf.reduce_sum(
-                tf.multiply(
-                    tf.stop_gradient(policy_t), -model.log_alpha *
-                    tf.stop_gradient(log_pis_t + model.target_entropy)),
-                axis=-1)) / own_exp_sum
-        entropy = -tf.reduce_sum(
-            train_batch["own_experience"] * tf.reduce_sum(tf.multiply(policy_t, log_pis_t), axis=-1)) / own_exp_sum
-        # action_dist_class = get_dist_class(policy.config, policy.action_space)
-        # action_dist_t = action_dist_class(model.get_policy_output(model_out_t), policy.model)
-        # entropy = action_dist_t.entropy()
+        # alpha_loss = tf.reduce_sum(
+        #     train_batch["own_experience"] * tf.reduce_sum(
+        #         tf.multiply(
+        #             tf.stop_gradient(policy_t), -model.log_alpha *
+        #             tf.stop_gradient(log_pis_t + model.target_entropy)),
+        #         axis=-1)) / own_exp_sum
+        # entropy = -tf.reduce_sum(
+        #     train_batch["own_experience"] * tf.reduce_sum(tf.multiply(policy_t, log_pis_t), axis=-1)) / own_exp_sum
         actor_loss = tf.reduce_mean(
             tf.reduce_sum(
                 tf.multiply(
@@ -389,6 +386,9 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
                     model.alpha * log_pis_t - tf.reduce_min((q_t, twin_q_t), axis=0)
                 ),
                 axis=-1))
+        entropy = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
+        alpha_backup = tf.stop_gradient(model.target_entropy - entropy)
+        alpha_loss = -tf.reduce_mean(model.log_alpha * alpha_backup)
     else:
         alpha_loss = -tf.reduce_sum(
             train_batch["own_experience"] * model.log_alpha *
