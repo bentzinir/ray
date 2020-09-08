@@ -11,8 +11,7 @@ from ray.rllib.policy import Policy
 from typing import Dict
 from ray.rllib.examples.env.multi_agent import make_multiagent
 import yaml
-import os
-from ray.rllib.env.atari_wrappers import is_atari
+from ray.rllib.examples.env.maze_env import MazeEnv
 import collections.abc
 import numpy as np
 
@@ -50,7 +49,6 @@ def get_parser():
     parser.add_argument("--beta_learning_rate", type=float, default=3e-4)
     parser.add_argument("--shuffle_data", action="store_true")
     parser.add_argument("--divergence_type", type=str, default="none")
-    parser.add_argument("--spatial", action="store_true")
     parser.add_argument("--vis_sleep", type=float, default=0.0)
     parser.add_argument("--yaml_config", type=str, default="none")
     return parser
@@ -125,8 +123,8 @@ def get_config(args):
         'env': make_multiagent(args.env),
         "env_config": {
             "num_agents": args.ensemble_size,
-            "spatial": args.spatial,
-            # We normalize by 255 observations of any integer type
+            "spatial": args.spatial,  # a flag for maze env
+            # We normalize observations of any integer type by 255
             "normalize_obs": np.issubdtype(single_env.observation_space.dtype, np.integer),
             },
         'num_workers': args.num_workers,
@@ -161,8 +159,11 @@ def get_config(args):
 def get_args():
     args, extra_args = get_parser().parse_known_args()
     if args.env == 'maze':
-        from ray.rllib.examples.env.maze_env import MazeEnv
         args.env = MazeEnv
+        args.spatial = False
+    elif args.env == 'maze-spatial':
+        args.env = MazeEnv
+        args.spatial = True
     return args, extra_args
 
 

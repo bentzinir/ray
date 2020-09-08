@@ -8,7 +8,9 @@ import numpy as np
 
 
 def wrap(env):
-    env.agents = [wrap_deepmind(a) for a in env.agents if is_atari(a)]
+    for i, a in enumerate(env.agents):
+        if is_atari(a):
+            env.agents[i] = wrap_deepmind(a)
     return env
 
 
