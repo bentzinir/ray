@@ -51,6 +51,8 @@ def get_parser():
     parser.add_argument("--divergence_type", type=str, default="none")
     parser.add_argument("--vis_sleep", type=float, default=0.0)
     parser.add_argument("--yaml_config", type=str, default="none")
+    parser.add_argument("--initial_alpha", type=float, default=1.0)
+    parser.add_argument("--initial_beta", type=float, default=0.0001)
     return parser
 
 
@@ -139,6 +141,8 @@ def get_config(args):
         },
         "alpha": args.alpha,
         "beta": args.beta,
+        "initial_alpha": args.initial_alpha,
+        "initial_beta": args.initial_beta,
         'gamma': args.gamma,
         "buffer_size": args.buffer_size,
         "entropy_scale": args.entropy_scale,
