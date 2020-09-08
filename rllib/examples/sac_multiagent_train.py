@@ -164,6 +164,8 @@ def get_args():
     elif args.env == 'maze-spatial':
         args.env = MazeEnv
         args.spatial = True
+    else:
+        args.spatial = False
     return args, extra_args
 
 
