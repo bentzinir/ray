@@ -197,6 +197,40 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             q_tp1 = tf.reduce_min((q_tp1, twin_q_tp1), axis=0)
         q_tp1 -= model.alpha * log_pis_tp1
 
+        ########################################
+        # # Old Diversity reward
+        # if model.divergence_type == 'state_action':
+        #     # calculated based on s_t, a_t. First extract discrimination for all actions in time t
+        #     at_time = 'tp1'
+        #     if at_time == 't':
+        #         discrimination = model.get_d_values(model_out_t, actions=None)
+        #         # Slice actually selected action a_t
+        #         one_hot_3d = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
+        #         discrimination = tf.reduce_sum(discrimination * one_hot_3d, axis=2)
+        #     elif at_time == 'tp1':
+        #         discrimination = model.get_d_values(model_out_tp1, actions=None)
+        #         action_dist_class = get_dist_class(policy.config, policy.action_space)
+        #         action_dist_tp1 = action_dist_class(
+        #             model.get_policy_output(model_out_tp1), policy.model)
+        #         sampled_a_tp1 = action_dist_tp1.sample()
+        #         # Slice sampled action a_tp1
+        #         one_hot_tp1 = tf.one_hot(sampled_a_tp1, depth=q_t.shape.as_list()[-1])
+        #         one_hot_3d_tp1 = tf.tile(tf.expand_dims(one_hot_tp1, axis=1), multiples=[1, 2, 1])
+        #         discrimination = tf.reduce_sum(discrimination * one_hot_3d_tp1, axis=2)
+        #     else:
+        #         raise ValueError
+        # elif model.divergence_type == 'state':
+        #     # calculated based on s_tp1
+        #     discrimination = model.get_d_values(model_out_tp1, actions=None)
+        #     discrimination = tf.squeeze(discrimination, axis=2)
+        # else:
+        #     print(f"Unsupported divergence type: {model.divergence_type}")
+        #     raise ValueError
+        # log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
+        # agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
+        # q_tp1 += model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
+        ########################################
+
         # Actually selected Q-values (from the actions batch).
         one_hot = tf.one_hot(
             train_batch[SampleBatch.ACTIONS], depth=q_t.shape.as_list()[-1])
@@ -205,40 +239,16 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             twin_q_t_selected = tf.reduce_sum(twin_q_t * one_hot, axis=-1)
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
         q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
-        # Diversity reward
-        if model.divergence_type == 'state_action':
-            # calculated based on s_t, a_t. First extract discrimination for all actions in time t
-            at_time = 'tp1'
-            if at_time == 't':
-                discrimination = model.get_d_values(model_out_t, actions=None)
-                # Slice actually selected action a_t
-                one_hot_3d = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
-                discrimination = tf.reduce_sum(discrimination * one_hot_3d, axis=2)
-            elif at_time == 'tp1':
-                discrimination = model.get_d_values(model_out_tp1, actions=None)
-                action_dist_class = get_dist_class(policy.config, policy.action_space)
-                action_dist_tp1 = action_dist_class(
-                    model.get_policy_output(model_out_tp1), policy.model)
-                sampled_a_tp1 = action_dist_tp1.sample()
-                # Slice sampled action a_tp1
-                one_hot_tp1 = tf.one_hot(sampled_a_tp1, depth=q_t.shape.as_list()[-1])
-                one_hot_3d_tp1 = tf.tile(tf.expand_dims(one_hot_tp1, axis=1), multiples=[1, 2, 1])
-                discrimination = tf.reduce_sum(discrimination * one_hot_3d_tp1, axis=2)
-            else:
-                raise ValueError
-        elif model.divergence_type == 'state':
-            # calculated based on s_tp1
-            discrimination = model.get_d_values(model_out_tp1, actions=None)
-            discrimination = tf.squeeze(discrimination, axis=2)
-        else:
-            print(f"Unsupported divergence type: {model.divergence_type}")
-            raise ValueError
-        log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
-        agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
-        q_tp1_best += model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
         q_tp1_best_masked = \
             (1.0 - tf.cast(train_batch[SampleBatch.DONES], tf.float32)) * \
             q_tp1_best
+
+        # Measure Ensemble Diversity
+        discrimination = model.get_d_values(model_out_t, actions=None)
+        # Slice actually selected action a_t
+        one_hot_3d = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
+        discrimination = tf.reduce_sum(discrimination * one_hot_3d, axis=2)
+
     # Continuous actions case.
     else:
         # Sample single actions from distribution.
@@ -283,35 +293,52 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         q_tp1 -= model.alpha * log_pis_tp1
 
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
-        # Diversity reward
-        if model.divergence_type == 'state_action':
-            at_time = "tp1"
-            if at_time == 't':
-                # calculate based on s_t, a_t
-                discrimination = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
-            elif at_time == 'tp1':
-                # calculate based on s_tp1, a_tp1
-                discrimination = model.get_d_values(model_out_tp1, policy_tp1)
-            else:
-                raise ValueError
-        elif model.divergence_type == 'state':
-            # calculate based on s_tp1
-            discrimination = model.get_d_values(model_out_tp1, actions=None)
-        else:
-            print(f"Unsupported divergence type: {model.divergence_type}")
-            raise ValueError
-        discrimination = tf.squeeze(discrimination, axis=2)
-        log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
-        agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
-        q_tp1_best += model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
+
+        ########################################
+        # # Old Diversity reward
+        # if model.divergence_type == 'state_action':
+        #     at_time = "tp1"
+        #     if at_time == 't':
+        #         # calculate based on s_t, a_t
+        #         discrimination = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
+        #     elif at_time == 'tp1':
+        #         # calculate based on s_tp1, a_tp1
+        #         discrimination = model.get_d_values(model_out_tp1, policy_tp1)
+        #     else:
+        #         raise ValueError
+        # elif model.divergence_type == 'state':
+        #     # calculate based on s_tp1
+        #     discrimination = model.get_d_values(model_out_tp1, actions=None)
+        # else:
+        #     print(f"Unsupported divergence type: {model.divergence_type}")
+        #     raise ValueError
+        # discrimination = tf.squeeze(discrimination, axis=2)
+        # log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
+        # agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
+        # q_tp1_best += model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
+        ########################################
+
         q_tp1_best_masked = (1.0 - tf.cast(train_batch[SampleBatch.DONES],
                                            tf.float32)) * q_tp1_best
 
+        # Measure Ensemble Diversity
+        discrimination = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
+        discrimination = tf.squeeze(discrimination, axis=2)
+
     assert policy.config["n_step"] == 1, "TODO(hartikainen) n_step > 1"
+
+    # Calculate diversity reward
+    log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
+    agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
+    diversity_reward = model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
 
     # compute RHS of bellman equation
     q_t_selected_target = tf.stop_gradient(
         train_batch[SampleBatch.REWARDS] +
+
+        # Apply diversity reward here
+        diversity_reward +
+
         policy.config["gamma"] ** policy.config["n_step"] * q_tp1_best_masked)
 
     # Compute the TD-error (potentially clipped).
@@ -355,9 +382,11 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
                     # NOTE: No stop_grad around policy output here
                     # (compare with q_t_det_policy for continuous case).
                     policy_t,
-                    model.alpha * log_pis_t - tf.stop_gradient(q_t)),
+                    # model.alpha * log_pis_t - tf.stop_gradient(q_t)
+                    # nirbz: take the minimum over two Q functions
+                    model.alpha * log_pis_t - tf.reduce_min((q_t, twin_q_t), axis=0)
+                ),
                 axis=-1))
-        # actor_loss = tf.reduce_mean(tf.reduce_sum(one_hot * (model.alpha * log_pis_t - q_t), axis=1))
     else:
         alpha_loss = -tf.reduce_sum(
             train_batch["own_experience"] * model.log_alpha *
