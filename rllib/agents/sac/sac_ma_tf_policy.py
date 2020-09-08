@@ -285,8 +285,15 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
         # Diversity reward
         if model.divergence_type == 'state_action':
-            # calculate based on s_t, a_t
-            discrimination = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
+            at_time = "tp1"
+            if at_time == 't':
+                # calculate based on s_t, a_t
+                discrimination = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
+            elif at_time == 'tp1':
+                # calculate based on s_tp1, a_tp1
+                discrimination = model.get_d_values(model_out_tp1, policy_tp1)
+            else:
+                raise ValueError
         elif model.divergence_type == 'state':
             # calculate based on s_tp1
             discrimination = model.get_d_values(model_out_tp1, actions=None)
@@ -350,6 +357,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
                     policy_t,
                     model.alpha * log_pis_t - tf.stop_gradient(q_t)),
                 axis=-1))
+        # actor_loss = tf.reduce_mean(tf.reduce_sum(one_hot * (model.alpha * log_pis_t - q_t), axis=1))
     else:
         alpha_loss = -tf.reduce_sum(
             train_batch["own_experience"] * model.log_alpha *
