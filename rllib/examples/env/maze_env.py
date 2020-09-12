@@ -43,20 +43,18 @@ class MazeEnv(gym.Env):
                     self.end_pos = (x, y)
         logger.info("Start pos {} end pos {}".format(self.start_pos,
                                                      self.end_pos))
-        self.h = len(self.map)
-        self.w = len(self.map[0])
         if "spatial" in env_config and env_config["spatial"]:
             self.observation_space = Box(0, 255, shape=(42, 42, 3), dtype=np.uint8)
             self.spatial = True
         else:
-            self.observation_space = Box(0, 100, shape=(2,))
+            self.observation_space = Box(0, 1, shape=(2,), dtype=np.float32)
             self.spatial = False
         self.action_space = Discrete(5)  # whether to move or not
         self.viewer = None
 
-        self.bg = 255 * np.ones((self.h, self.w, 3), dtype=np.uint8)
-        for ridx in range(self.h):
-            for cidx in range(self.w):
+        self.bg = 255 * np.ones((self.x_dim, self.y_dim, 3), dtype=np.uint8)
+        for ridx in range(self.x_dim):
+            for cidx in range(self.y_dim):
                 if self.map[ridx][cidx] == "#":
                     self.bg[ridx, cidx, :] = [255, 0, 0]
         self.bg[self.end_pos] = [0, 0, 255]
@@ -70,7 +68,7 @@ class MazeEnv(gym.Env):
         self.num_steps = 0
         if self.spatial:
             return self._get_image(resize=True)
-        return np.array(self.pos)
+        return np.array(self.pos) / np.maximum(self.x_dim, self.y_dim)
 
     def step(self, action, verbose=False):
         self.pos = self._get_new_pos(self.pos, action)
@@ -84,7 +82,7 @@ class MazeEnv(gym.Env):
         if self.spatial:
             obs = self._get_image(resize=True)
         else:
-            obs = np.array(self.pos)
+            obs = np.array(self.pos) / np.maximum(self.x_dim, self.y_dim)
         return obs, reward, done, {}
 
     def _get_new_pos(self, pos, direction):

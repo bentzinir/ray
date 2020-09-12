@@ -40,6 +40,11 @@ def make_multiagent(env_name_or_creator):
                 obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
                 if done[i]:
                     self.dones.add(i)
+                    obs[i] = self.reset_i(i)
+                    done[i] = False
+                    info[i]['internal_done'] = True
+                else:
+                    info[i]['internal_done'] = False
             done["__all__"] = len(self.dones) == self.nagents
             return obs, rew, done, info
 

@@ -36,9 +36,9 @@ class SACMATFModel(TFModelV2):
                  alpha=None,
                  beta=None,
                  target_entropy=None,
-                 target_acc=0.5,
                  entropy_scale=1,
-                 divergence_type="state_action"):
+                 divergence_type="none",
+                 target_div=None,):
         """Initialize variables of this model.
 
         Extra model kwargs:
@@ -66,8 +66,6 @@ class SACMATFModel(TFModelV2):
             action_outs = 2 * self.action_dim
             q_outs = 1
 
-        self.d_outs = 2 * action_outs if self.discrete else 2
-        self.d_concat_input = not self.discrete
         self.divergence_type = divergence_type
         self.model_out = tf.keras.layers.Input(
             shape=(self.num_outputs, ), name="model_out")
@@ -149,27 +147,31 @@ class SACMATFModel(TFModelV2):
         self.register_variables([self.log_alpha])
 
         ###################################
-        # discriminator
-        d_net = tf.keras.Sequential(([
-                tf.keras.layers.Concatenate(axis=1),
-            ] if self.d_concat_input else []) +
-            [tf.keras.layers.Dense(
-            units=units,
-            activation=getattr(tf.nn, critic_hidden_activation, None),
-            name="d_hidden_{}".format(i))
-                                        for i, units in enumerate(critic_hiddens)
-                                    ] + [
-                                        tf.keras.layers.Dense(
-                                            units=self.d_outs, activation=None, name="d_out")
-                                    ])
+        # Ensemble discrimination
+        if divergence_type in ["state", "state_action"]:
+            # todo: implement continuous action support
+            self.d_outs = 2 * action_outs if divergence_type == 'state_action' else 2
+            self.d_concat_input = False
+            d_net = tf.keras.Sequential(([
+                         tf.keras.layers.Concatenate(axis=1),
+                     ] if self.d_concat_input else []) +
+                    [tf.keras.layers.Dense(
+                        units=units,
+                        activation=getattr(tf.nn, critic_hidden_activation, None),
+                        name="d_hidden_{}".format(i))
+                        for i, units in enumerate(critic_hiddens)
+                    ] + [
+                        tf.keras.layers.Dense(
+                            units=self.d_outs, activation=None, name="d_out")
+                    ])
 
-        if self.d_concat_input:
-            self.d_net = tf.keras.Model([self.model_out, self.actions_input],
-                                        d_net([self.model_out, self.actions_input]))
-        else:
-            self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
+            if self.d_concat_input:
+                self.d_net = tf.keras.Model([self.model_out, self.actions_input],
+                                            d_net([self.model_out, self.actions_input]))
+            else:
+                self.d_net = tf.keras.Model(self.model_out, d_net(self.model_out))
 
-        self.register_variables(self.d_net.variables)
+            self.register_variables(self.d_net.variables)
         if beta is not None:
             initial_beta = beta
             print("=================Constant Beta=================")
@@ -177,7 +179,7 @@ class SACMATFModel(TFModelV2):
             np.log(initial_beta), dtype=tf.float32, name="log_beta")
         self.beta = tf.exp(self.log_beta)
         self.register_variables([self.log_beta])
-        self.target_acc = target_acc
+        self.target_div = target_div
         ###################################
 
     def get_q_values(self, model_out, actions=None):
