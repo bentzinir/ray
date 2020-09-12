@@ -343,7 +343,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
     # Train diversity model
     if model.divergence_type == 'action':
-        disc_loss = 0  # non-parametric diversity regularization mode
+        delta_loss = 0  # non-parametric diversity regularization mode
         divergence_vec = tf.math.not_equal(
             tf.argmax(policy_t, axis=1, output_type=tf.int32),
             tf.argmax(train_batch["opponent_action_dist"], axis=1, output_type=tf.int32))
@@ -358,9 +358,9 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             d_t = tf.reduce_sum(one_hot_3d * d_t, axis=2)
         else:  # state-only discrimination mode
             d_t = tf.squeeze(d_t, axis=2)
-        disc_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
+        delta_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
         leq_count = 1e-4 + tf.reduce_sum(train_batch["leq_agent"])
-        disc_loss = tf.reduce_sum(train_batch["leq_agent"] * disc_loss_vec) / leq_count
+        delta_loss = tf.reduce_sum(train_batch["leq_agent"] * delta_loss_vec) / leq_count
         divergence_vec = tf.math.equal(train_batch["disc_label"],
                                        tf.argmax(d_t, axis=1, output_type=tf.int32))
         divergence_vec = tf.cast(divergence_vec, tf.float32)
@@ -383,7 +383,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.alpha_value = model.alpha
     policy.entropy = entropy
     policy.target_entropy = model.target_entropy
-    policy.disc_loss = disc_loss
+    policy.delta_loss = delta_loss
     policy.beta_loss = beta_loss
     policy.beta_value = model.beta
     policy.target_div = model.target_div
@@ -391,7 +391,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
-    return actor_loss + tf.math.add_n(critic_loss) + alpha_loss + beta_loss + disc_loss
+    return actor_loss + tf.math.add_n(critic_loss) + alpha_loss + beta_loss + delta_loss
 
 
 def gradients_fn(policy, optimizer, loss):
@@ -423,8 +423,8 @@ def gradients_fn(policy, optimizer, loss):
             policy.beta_loss, beta_vars), beta_vars))
         if hasattr(policy.model, "d_net"):
             d_weights = policy.model.d_variables()
-            disc_grads_and_vars = list(zip(tape.gradient(
-                policy.disc_loss, d_weights), d_weights))
+            delta_grads_and_vars = list(zip(tape.gradient(
+                policy.delta_loss, d_weights), d_weights))
     # Tf1.x: Use optimizer.compute_gradients()
     else:
         actor_grads_and_vars = policy._actor_optimizer.compute_gradients(
@@ -447,8 +447,8 @@ def gradients_fn(policy, optimizer, loss):
         beta_grads_and_vars = policy._beta_optimizer.compute_gradients(
             policy.beta_loss, var_list=[policy.model.log_beta])
         if hasattr(policy.model, "d_net"):
-            disc_grads_and_vars = policy._delta_optimizer.compute_gradients(
-                policy.disc_loss, var_list=policy.model.d_variables())
+            delta_grads_and_vars = policy._delta_optimizer.compute_gradients(
+                policy.delta_loss, var_list=policy.model.d_variables())
 
     # Clip if necessary.
     if policy.config["grad_clip"]:
@@ -464,17 +464,17 @@ def gradients_fn(policy, optimizer, loss):
     policy._alpha_grads_and_vars = [
         (clip_func(g), v) for (g, v) in alpha_grads_and_vars if g is not None]
     if hasattr(policy.model, "d_net"):
-        policy._disc_grads_and_vars = [
-            (clip_func(g), v) for (g, v) in disc_grads_and_vars if g is not None]
+        policy._delta_grads_and_vars = [
+            (clip_func(g), v) for (g, v) in delta_grads_and_vars if g is not None]
     else:
-        policy._disc_grads_and_vars = []
+        policy._delta_grads_and_vars = []
     policy._beta_grads_and_vars = [
         (clip_func(g), v) for (g, v) in beta_grads_and_vars if g is not None]
 
     grads_and_vars = (
         policy._actor_grads_and_vars + policy._critic_grads_and_vars +
         policy._alpha_grads_and_vars + policy._beta_grads_and_vars
-        + policy._disc_grads_and_vars)
+        + policy._delta_grads_and_vars)
     return grads_and_vars
 
 
@@ -494,10 +494,10 @@ def apply_gradients(policy, optimizer, grads_and_vars):
             policy._critic_optimizer[0].apply_gradients(cgrads)
         ]
     if hasattr(policy.model, "d_net"):
-        disc_apply_ops = [policy._delta_optimizer.apply_gradients(
-            policy._disc_grads_and_vars)]
+        delta_apply_ops = [policy._delta_optimizer.apply_gradients(
+            policy._delta_grads_and_vars)]
     else:
-        disc_apply_ops = []
+        delta_apply_ops = []
     if policy.config["framework"] in ["tf2", "tfe"]:
         if policy.config["alpha"] is None:
             policy._alpha_optimizer.apply_gradients(policy._alpha_grads_and_vars)
@@ -505,7 +505,7 @@ def apply_gradients(policy, optimizer, grads_and_vars):
             policy._beta_optimizer.apply_gradients(policy._beta_grads_and_vars)
         return
     else:
-        apply_ops = [actor_apply_ops] + critic_apply_ops + disc_apply_ops
+        apply_ops = [actor_apply_ops] + critic_apply_ops + delta_apply_ops
         if policy.config["alpha"] is None:
             alpha_apply_ops = policy._alpha_optimizer.apply_gradients(
                 policy._alpha_grads_and_vars,
