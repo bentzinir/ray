@@ -68,7 +68,7 @@ def build_sac_model(policy, obs_space, action_space, config):
         alpha=config["alpha"],
         beta=config["beta"],
         entropy_scale=config["entropy_scale"],
-        target_acc=config["target_acc"],
+        target_div=config["target_div"],
         divergence_type=config["divergence_type"],)
 
     policy.target_model = ModelCatalog.get_model_v2(
@@ -91,7 +91,7 @@ def build_sac_model(policy, obs_space, action_space, config):
         alpha=config["alpha"],
         beta=config["beta"],
         entropy_scale=config["entropy_scale"],
-        target_acc=config["target_acc"],
+        target_div=config["target_div"],
         divergence_type=config["divergence_type"],)
 
     return policy.model
@@ -106,18 +106,32 @@ def postprocess_trajectory(policy,
             opponent_batch = other_agent_batches[opponent_id][1]
             for key in opponent_batch.keys():
                 sample_batch[key] = np.append(sample_batch[key], opponent_batch[key], axis=0)
-    sample_batch["disc_valid"] = np.ones_like(sample_batch[SampleBatch.REWARDS])
-    sample_batch["disc_label"] = AGENT_LABEL * np.ones_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
-    sample_batch["own_experience"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+
+    sample_batch["disc_label"] = np.zeros_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
+    sample_batch["l_agent"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    sample_batch["leq_agent"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    sample_batch["opponent_logp"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    # todo: change logic below to support continuous actions
+    sample_batch["opponent_action_dist"] = np.ones((len(sample_batch[SampleBatch.REWARDS]),
+                                                   policy.model.action_space.n), dtype=np.float32)
+
     if 'agent_id' in sample_batch:
         agent_id = sample_batch["agent_id"][0]
         for i, member_id in enumerate(sample_batch['agent_id']):
             if member_id < agent_id:
+                sample_batch["l_agent"][i] = 1.
+                sample_batch["leq_agent"][i] = 1.
                 sample_batch["disc_label"][i] = OPPONENT_LABEL
-                sample_batch["own_experience"][i] = 0.
+                sample_batch["opponent_logp"][i] = sample_batch["action_logp"][i]
+                sample_batch["opponent_action_dist"][i] = sample_batch["action_dist_inputs"][i]
             elif member_id == agent_id:
+                sample_batch["leq_agent"][i] = 1.
                 sample_batch["disc_label"][i] = AGENT_LABEL
-                sample_batch["own_experience"][i] = 1.
+            if 'infos' in sample_batch:
+                sample_batch[SampleBatch.DONES][i] = sample_batch[SampleBatch.DONES][i] or \
+                                                     sample_batch['infos'][i]['internal_done']
+            else:
+                raise AssertionError
         if policy.config["shuffle_data"]:
             j = random.choice(range(len(sample_batch['t'])))
             sample_batch = sample_batch.slice(j, j+1)
@@ -165,29 +179,34 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     else:
         print("====== No Obs Normalization ======")
 
-    model_out_t, _ = model({
-        "obs": cur_obs,
-        "is_training": policy._get_is_training_placeholder(),
-    }, [], None)
+    with tf.compat.v1.variable_scope("model_out_t", reuse=tf.compat.v1.AUTO_REUSE):
+        model_out_t, _ = model({
+            "obs": cur_obs,
+            "is_training": policy._get_is_training_placeholder(),
+        }, [], None)
 
-    model_out_tp1, _ = model({
-        "obs": next_obs,
-        "is_training": policy._get_is_training_placeholder(),
-    }, [], None)
+    with tf.compat.v1.variable_scope("model_out_tp1", reuse=tf.compat.v1.AUTO_REUSE):
+        model_out_tp1, _ = model({
+            "obs": next_obs,
+            "is_training": policy._get_is_training_placeholder(),
+        }, [], None)
 
-    target_model_out_tp1, _ = policy.target_model({
-        "obs": next_obs,
-        "is_training": policy._get_is_training_placeholder(),
-    }, [], None)
+    with tf.compat.v1.variable_scope("target_model_out_tp1", reuse=tf.compat.v1.AUTO_REUSE):
+        target_model_out_tp1, _ = policy.target_model({
+            "obs": next_obs,
+            "is_training": policy._get_is_training_placeholder(),
+        }, [], None)
 
     # Discrete case.
     if model.discrete:
         # Get all action probs directly from pi and form their logp.
         log_pis_t = tf.nn.log_softmax(model.get_policy_output(model_out_t), -1)
         policy_t = tf.math.exp(log_pis_t)
-        log_pis_tp1 = tf.nn.log_softmax(
-            model.get_policy_output(model_out_tp1), -1)
-        policy_tp1 = tf.math.exp(log_pis_tp1)
+        # todo change 1: we take log_pis_tp1 from the target model instead of from the model
+        log_pis_tp1_target = tf.nn.log_softmax(
+            policy.target_model.get_policy_output(target_model_out_tp1), -1)
+        # todo change 2: we take policy_tp1 from target model instead of from the model
+        policy_tp1_target = tf.math.exp(log_pis_tp1_target)
         # Q-values.
         q_t = model.get_q_values(model_out_t)
         # Target Q-values.
@@ -197,41 +216,25 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             twin_q_tp1 = policy.target_model.get_twin_q_values(
                 target_model_out_tp1)
             q_tp1 = tf.reduce_min((q_tp1, twin_q_tp1), axis=0)
-        q_tp1 -= model.alpha * log_pis_tp1
+        q_tp1 -= model.alpha * log_pis_tp1_target
 
-        ########################################
-        # # Old Diversity reward
-        # if model.divergence_type == 'state_action':
-        #     # calculated based on s_t, a_t. First extract discrimination for all actions in time t
-        #     at_time = 'tp1'
-        #     if at_time == 't':
-        #         discrimination = model.get_d_values(model_out_t, actions=None)
-        #         # Slice actually selected action a_t
-        #         one_hot_3d = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
-        #         discrimination = tf.reduce_sum(discrimination * one_hot_3d, axis=2)
-        #     elif at_time == 'tp1':
-        #         discrimination = model.get_d_values(model_out_tp1, actions=None)
-        #         action_dist_class = get_dist_class(policy.config, policy.action_space)
-        #         action_dist_tp1 = action_dist_class(
-        #             model.get_policy_output(model_out_tp1), policy.model)
-        #         sampled_a_tp1 = action_dist_tp1.sample()
-        #         # Slice sampled action a_tp1
-        #         one_hot_tp1 = tf.one_hot(sampled_a_tp1, depth=q_t.shape.as_list()[-1])
-        #         one_hot_3d_tp1 = tf.tile(tf.expand_dims(one_hot_tp1, axis=1), multiples=[1, 2, 1])
-        #         discrimination = tf.reduce_sum(discrimination * one_hot_3d_tp1, axis=2)
-        #     else:
-        #         raise ValueError
-        # elif model.divergence_type == 'state':
-        #     # calculated based on s_tp1
-        #     discrimination = model.get_d_values(model_out_tp1, actions=None)
-        #     discrimination = tf.squeeze(discrimination, axis=2)
-        # else:
-        #     print(f"Unsupported divergence type: {model.divergence_type}")
-        #     raise ValueError
-        # log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
-        # agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
-        # q_tp1 += model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
-        ########################################
+        # Apply ensemble diversity regularization
+        if model.divergence_type == 'action':
+            # todo: clarify possible bug. penalty based on s_t instead of s_tp1
+            logd_tp1_target = tf.expand_dims(train_batch["opponent_logp"], axis=1)
+            logd_tp1_target = tf.tile(logd_tp1_target, multiples=[1, q_t.shape.as_list()[-1]])
+        elif model.divergence_type in ['state', 'state_action']:
+            d_tp1_target = policy.target_model.get_d_values(target_model_out_tp1, actions=None)
+            logd_tp1_target = tf.nn.log_softmax(d_tp1_target, axis=1)
+            logd_tp1_target = tf.slice(logd_tp1_target, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
+            # todo: experiment with positive agent-based regularization in oppose to negative opponent-based pne
+            # logd_tp1_target = -tf.slice(logd_tp1_target, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
+            if model.divergence_type == 'state':
+                logd_tp1_target = tf.tile(logd_tp1_target, multiples=[1, 1, q_t.shape.as_list()[-1]])
+            logd_tp1_target = tf.squeeze(logd_tp1_target, axis=1)
+        else:
+            raise ValueError
+        q_tp1 -= model.beta * logd_tp1_target
 
         # Actually selected Q-values (from the actions batch).
         one_hot = tf.one_hot(
@@ -240,19 +243,14 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         if policy.config["twin_q"]:
             twin_q_t_selected = tf.reduce_sum(twin_q_t * one_hot, axis=-1)
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
-        q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
+        q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1_target, q_tp1), axis=-1)
         q_tp1_best_masked = \
             (1.0 - tf.cast(train_batch[SampleBatch.DONES], tf.float32)) * \
             q_tp1_best
 
-        # Measure Ensemble Diversity
-        discrimination = model.get_d_values(model_out_t, actions=None)
-        # Slice actually selected action a_t
-        one_hot_3d = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
-        discrimination = tf.reduce_sum(discrimination * one_hot_3d, axis=2)
-
     # Continuous actions case.
     else:
+        assert False, 'not re-implemented yet'
         # Sample single actions from distribution.
         action_dist_class = get_dist_class(policy.config, policy.action_space)
         action_dist_t = action_dist_class(
@@ -295,52 +293,14 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         q_tp1 -= model.alpha * log_pis_tp1
 
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
-
-        ########################################
-        # # Old Diversity reward
-        # if model.divergence_type == 'state_action':
-        #     at_time = "tp1"
-        #     if at_time == 't':
-        #         # calculate based on s_t, a_t
-        #         discrimination = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
-        #     elif at_time == 'tp1':
-        #         # calculate based on s_tp1, a_tp1
-        #         discrimination = model.get_d_values(model_out_tp1, policy_tp1)
-        #     else:
-        #         raise ValueError
-        # elif model.divergence_type == 'state':
-        #     # calculate based on s_tp1
-        #     discrimination = model.get_d_values(model_out_tp1, actions=None)
-        # else:
-        #     print(f"Unsupported divergence type: {model.divergence_type}")
-        #     raise ValueError
-        # discrimination = tf.squeeze(discrimination, axis=2)
-        # log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
-        # agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
-        # q_tp1_best += model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
-        ########################################
-
         q_tp1_best_masked = (1.0 - tf.cast(train_batch[SampleBatch.DONES],
                                            tf.float32)) * q_tp1_best
 
-        # Measure Ensemble Diversity
-        discrimination = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
-        discrimination = tf.squeeze(discrimination, axis=2)
-
     assert policy.config["n_step"] == 1, "TODO(hartikainen) n_step > 1"
-
-    # Calculate diversity reward
-    log_discrimination = tf.nn.log_softmax(discrimination, axis=1)
-    agent_discrimination_logit = tf.split(log_discrimination, 2, axis=1)[AGENT_LABEL]
-    diversity_reward = model.beta * tf.squeeze(agent_discrimination_logit, axis=1)
 
     # compute RHS of bellman equation
     q_t_selected_target = tf.stop_gradient(
         train_batch[SampleBatch.REWARDS] +
-
-        # Apply diversity reward here
-        diversity_reward +
-
         policy.config["gamma"] ** policy.config["n_step"] * q_tp1_best_masked)
 
     # Compute the TD-error (potentially clipped).
@@ -365,52 +325,53 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # Note: In the papers, alpha is used directly, here we take the log.
     # Discrete case: Multiply the action probs as weights with the original
     # loss terms (no expectations needed).
-    own_exp_sum = 1e-4 + tf.reduce_sum(train_batch["own_experience"])
     if model.discrete:
-        # alpha_loss = tf.reduce_sum(
-        #     train_batch["own_experience"] * tf.reduce_sum(
-        #         tf.multiply(
-        #             tf.stop_gradient(policy_t), -model.log_alpha *
-        #             tf.stop_gradient(log_pis_t + model.target_entropy)),
-        #         axis=-1)) / own_exp_sum
-        # entropy = -tf.reduce_sum(
-        #     train_batch["own_experience"] * tf.reduce_sum(tf.multiply(policy_t, log_pis_t), axis=-1)) / own_exp_sum
+        # todo change 3: take the minimum over two Q functions as in the continuous case
+        min_q_t = tf.reduce_min((q_t, twin_q_t), axis=0)
         actor_loss = tf.reduce_mean(
             tf.reduce_sum(
-                tf.multiply(
-                    # NOTE: No stop_grad around policy output here
-                    # (compare with q_t_det_policy for continuous case).
-                    policy_t,
-                    # model.alpha * log_pis_t - tf.stop_gradient(q_t)
-                    # nirbz: take the minimum over two Q functions
-                    model.alpha * log_pis_t - tf.reduce_min((q_t, twin_q_t), axis=0)
-                ),
+                # todo change 4: newly derived KL divergence loss function
+                tf.multiply(policy_t, model.alpha * log_pis_t - tf.nn.log_softmax(min_q_t, axis=1)),
                 axis=-1))
         entropy = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
         alpha_backup = tf.stop_gradient(model.target_entropy - entropy)
+        # todo change 5: take log alpha instead of alpha
         alpha_loss = -tf.reduce_mean(model.log_alpha * alpha_backup)
     else:
-        alpha_loss = -tf.reduce_sum(
-            train_batch["own_experience"] * model.log_alpha *
-            tf.stop_gradient(log_pis_t + model.target_entropy)) / own_exp_sum
-        entropy = -tf.reduce_sum(train_batch["own_experience"] * log_pis_t) / own_exp_sum
+        alpha_loss = -tf.reduce_mean(model.log_alpha * tf.stop_gradient(log_pis_t + model.target_entropy))
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
 
-    # discrimination
-    d_t = model.get_d_values(model_out_t, train_batch[SampleBatch.ACTIONS])
-    if d_t.shape.as_list()[2] > 1:
-        assert model.discrete
-        one_hot_3d = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
-        d_t = tf.reduce_sum(d_t * one_hot_3d, axis=2)
+    # Train diversity model
+    if model.divergence_type == 'action':
+        disc_loss = 0  # non-parametric diversity regularization mode
+        divergence_vec = tf.math.not_equal(
+            tf.argmax(policy_t, axis=1, output_type=tf.int32),
+            tf.argmax(train_batch["opponent_action_dist"], axis=1, output_type=tf.int32))
+        divergence_vec = tf.cast(divergence_vec, tf.float32)
+        divergence_vec = divergence_vec * train_batch["l_agent"]
+        l_count = 1e-4 + tf.reduce_sum(train_batch["l_agent"])
+        div_rate = tf.reduce_sum(divergence_vec) / l_count
+    elif model.divergence_type in ['state_action', 'state']:
+        d_t = model.get_d_values(model_out_t, actions=None)
+        if model.divergence_type == 'state_action':
+            one_hot_3d = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
+            d_t = tf.reduce_sum(one_hot_3d * d_t, axis=2)
+        else:  # state-only discrimination mode
+            d_t = tf.squeeze(d_t, axis=2)
+        disc_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
+        leq_count = 1e-4 + tf.reduce_sum(train_batch["leq_agent"])
+        disc_loss = tf.reduce_sum(train_batch["leq_agent"] * disc_loss_vec) / leq_count
+        divergence_vec = tf.math.equal(train_batch["disc_label"],
+                                       tf.argmax(d_t, axis=1, output_type=tf.int32))
+        divergence_vec = tf.cast(divergence_vec, tf.float32)
+        divergence_vec = divergence_vec * train_batch["leq_agent"]
+        div_rate = tf.reduce_sum(divergence_vec) / leq_count
     else:
-        d_t = tf.squeeze(d_t, axis=2)
-    valid_count = 1e-4 + tf.reduce_sum(train_batch["disc_valid"])
-    disc_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
-    disc_loss = tf.reduce_sum(train_batch["disc_valid"] * disc_loss_vec) / valid_count
-    disc_accuracy_vec = tf.math.equal(train_batch["disc_label"], tf.argmax(d_t, axis=1, output_type=tf.int32))
-    disc_accuracy_vec = tf.cast(disc_accuracy_vec, tf.float32) * train_batch["disc_valid"]
-    disc_accuracy = tf.reduce_sum(disc_accuracy_vec) / valid_count
-    beta_loss = model.beta * tf.stop_gradient(disc_accuracy - model.target_acc)
+        raise ValueError
+
+    # Auto adjust divergence coefficient
+    beta_backup = tf.stop_gradient(model.target_div - div_rate)
+    beta_loss = - tf.reduce_mean(model.log_beta * beta_backup)
 
     # save for stats function
     policy.policy_t = policy_t
@@ -420,17 +381,17 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.critic_loss = critic_loss
     policy.alpha_loss = alpha_loss
     policy.alpha_value = model.alpha
-    policy.beta_loss = beta_loss
-    policy.beta_value = model.beta
+    policy.entropy = entropy
     policy.target_entropy = model.target_entropy
     policy.disc_loss = disc_loss
-    policy.disc_acc = disc_accuracy
-    policy.entropy = entropy
-    policy.agent_discrimination_logit = agent_discrimination_logit
+    policy.beta_loss = beta_loss
+    policy.beta_value = model.beta
+    policy.target_div = model.target_div
+    policy.div_rate = div_rate
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
-    return actor_loss + tf.math.add_n(critic_loss) + alpha_loss + disc_loss + beta_loss
+    return actor_loss + tf.math.add_n(critic_loss) + alpha_loss + beta_loss + disc_loss
 
 
 def gradients_fn(policy, optimizer, loss):
@@ -457,12 +418,13 @@ def gradients_fn(policy, optimizer, loss):
         alpha_vars = [policy.model.log_alpha]
         alpha_grads_and_vars = list(zip(tape.gradient(
             policy.alpha_loss, alpha_vars), alpha_vars))
-        d_weights = policy.model.d_variables()
-        disc_grads_and_vars = list(zip(tape.gradient(
-            policy.disc_loss, d_weights), d_weights))
         beta_vars = [policy.model.log_beta]
         beta_grads_and_vars = list(zip(tape.gradient(
             policy.beta_loss, beta_vars), beta_vars))
+        if hasattr(policy.model, "d_net"):
+            d_weights = policy.model.d_variables()
+            disc_grads_and_vars = list(zip(tape.gradient(
+                policy.disc_loss, d_weights), d_weights))
     # Tf1.x: Use optimizer.compute_gradients()
     else:
         actor_grads_and_vars = policy._actor_optimizer.compute_gradients(
@@ -482,10 +444,11 @@ def gradients_fn(policy, optimizer, loss):
                     policy.critic_loss[0], var_list=q_weights)
         alpha_grads_and_vars = policy._alpha_optimizer.compute_gradients(
             policy.alpha_loss, var_list=[policy.model.log_alpha])
-        disc_grads_and_vars = policy._disc_optimizer.compute_gradients(
-            policy.disc_loss, var_list=policy.model.d_variables())
         beta_grads_and_vars = policy._beta_optimizer.compute_gradients(
             policy.beta_loss, var_list=[policy.model.log_beta])
+        if hasattr(policy.model, "d_net"):
+            disc_grads_and_vars = policy._delta_optimizer.compute_gradients(
+                policy.disc_loss, var_list=policy.model.d_variables())
 
     # Clip if necessary.
     if policy.config["grad_clip"]:
@@ -500,14 +463,18 @@ def gradients_fn(policy, optimizer, loss):
         (clip_func(g), v) for (g, v) in critic_grads_and_vars if g is not None]
     policy._alpha_grads_and_vars = [
         (clip_func(g), v) for (g, v) in alpha_grads_and_vars if g is not None]
-    policy._disc_grads_and_vars = [
-        (clip_func(g), v) for (g, v) in disc_grads_and_vars if g is not None]
+    if hasattr(policy.model, "d_net"):
+        policy._disc_grads_and_vars = [
+            (clip_func(g), v) for (g, v) in disc_grads_and_vars if g is not None]
+    else:
+        policy._disc_grads_and_vars = []
     policy._beta_grads_and_vars = [
         (clip_func(g), v) for (g, v) in beta_grads_and_vars if g is not None]
 
     grads_and_vars = (
         policy._actor_grads_and_vars + policy._critic_grads_and_vars +
-        policy._alpha_grads_and_vars + policy._disc_grads_and_vars + policy._beta_grads_and_vars)
+        policy._alpha_grads_and_vars + policy._beta_grads_and_vars
+        + policy._disc_grads_and_vars)
     return grads_and_vars
 
 
@@ -526,8 +493,11 @@ def apply_gradients(policy, optimizer, grads_and_vars):
         critic_apply_ops = [
             policy._critic_optimizer[0].apply_gradients(cgrads)
         ]
-    disc_apply_ops = policy._disc_optimizer.apply_gradients(
-        policy._disc_grads_and_vars)
+    if hasattr(policy.model, "d_net"):
+        disc_apply_ops = [policy._delta_optimizer.apply_gradients(
+            policy._disc_grads_and_vars)]
+    else:
+        disc_apply_ops = []
     if policy.config["framework"] in ["tf2", "tfe"]:
         if policy.config["alpha"] is None:
             policy._alpha_optimizer.apply_gradients(policy._alpha_grads_and_vars)
@@ -535,7 +505,7 @@ def apply_gradients(policy, optimizer, grads_and_vars):
             policy._beta_optimizer.apply_gradients(policy._beta_grads_and_vars)
         return
     else:
-        apply_ops = [actor_apply_ops] + critic_apply_ops + [disc_apply_ops]
+        apply_ops = [actor_apply_ops] + critic_apply_ops + disc_apply_ops
         if policy.config["alpha"] is None:
             alpha_apply_ops = policy._alpha_optimizer.apply_gradients(
                 policy._alpha_grads_and_vars,
@@ -551,8 +521,8 @@ def apply_gradients(policy, optimizer, grads_and_vars):
 
 def stats(policy, train_batch):
     return {
-        # "policy_t": policy.policy_t,
-        # "td_error": policy.td_error,
+        "policy_t": policy.policy_t,
+        "td_error": policy.td_error,
         "mean_td_error": tf.reduce_mean(policy.td_error),
         "actor_loss": tf.reduce_mean(policy.actor_loss),
         "critic_loss": tf.reduce_mean(policy.critic_loss),
@@ -561,13 +531,12 @@ def stats(policy, train_batch):
         "beta_loss": tf.reduce_mean(policy.beta_loss),
         "beta_value": tf.reduce_mean(policy.beta_value),
         "target_entropy": tf.constant(policy.target_entropy),
+        "target_div": tf.constant(policy.target_div),
         "mean_q": tf.reduce_mean(policy.q_t),
         "max_q": tf.reduce_max(policy.q_t),
         "min_q": tf.reduce_min(policy.q_t),
-        "disc_loss": tf.reduce_mean(policy.disc_loss),
-        "disc_acc": tf.reduce_mean(policy.disc_acc),
+        "div_rate": tf.reduce_mean(policy.div_rate),
         "entropy": tf.reduce_mean(policy.entropy),
-        "agent_discrimination_logit": tf.reduce_mean(policy.agent_discrimination_logit),
     }
 
 
@@ -591,10 +560,11 @@ class ActorCriticOptimizerMixin:
                             "critic_learning_rate"]))
             self._alpha_optimizer = tf.keras.optimizers.Adam(
                 learning_rate=config["optimization"]["entropy_learning_rate"])
-            self._disc_optimizer = tf.keras.optimizers.Adam(
-                learning_rate=config["optimization"]["critic_learning_rate"])
             self._beta_optimizer = tf.keras.optimizers.Adam(
                 learning_rate=config["optimization"]["beta_learning_rate"])
+            if config["divergence_type"] in ["state_action", "state"]:
+                self._delta_optimizer = tf.keras.optimizers.Adam(
+                    learning_rate=config["optimization"]["critic_learning_rate"])
         else:
             self.global_step = tf1.train.get_or_create_global_step()
             self._actor_optimizer = tf1.train.AdamOptimizer(
@@ -611,11 +581,11 @@ class ActorCriticOptimizerMixin:
                             "critic_learning_rate"]))
             self._alpha_optimizer = tf1.train.AdamOptimizer(
                 learning_rate=config["optimization"]["entropy_learning_rate"])
-            self._disc_optimizer = tf1.train.AdamOptimizer(
-                learning_rate=config["optimization"]["critic_learning_rate"])
             self._beta_optimizer = tf1.train.AdamOptimizer(
                 learning_rate=config["optimization"]["beta_learning_rate"])
-
+            if config["divergence_type"] in ["state_action", "state"]:
+                self._delta_optimizer = tf1.train.AdamOptimizer(
+                    learning_rate=config["optimization"]["critic_learning_rate"])
 
 def setup_early_mixins(policy, obs_space, action_space, config):
     ActorCriticOptimizerMixin.__init__(policy, config)

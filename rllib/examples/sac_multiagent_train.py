@@ -44,7 +44,7 @@ def get_parser():
     parser.add_argument("--checkpoint_freq", type=int, default=0)
     parser.add_argument("--buffer_size", type=int, default=1000000)
     parser.add_argument("--entropy_scale", type=float, default=1.)
-    parser.add_argument("--target_acc", type=float, default=0.5)
+    parser.add_argument("--target_div", type=float, default=None)
     parser.add_argument("--entropy_learning_rate", type=float, default=3e-4)
     parser.add_argument("--beta_learning_rate", type=float, default=3e-4)
     parser.add_argument("--shuffle_data", action="store_true")
@@ -146,7 +146,7 @@ def get_config(args):
         'gamma': args.gamma,
         "buffer_size": args.buffer_size,
         "entropy_scale": args.entropy_scale,
-        "target_acc": args.target_acc,
+        "target_div": args.target_div,
         "shuffle_data": args.shuffle_data,
         "optimization": {
             "entropy_learning_rate": args.entropy_learning_rate,

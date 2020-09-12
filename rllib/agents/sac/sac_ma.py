@@ -127,9 +127,9 @@ DEFAULT_CONFIG = with_common_config({
     "alpha": None,
     "beta": None,
     "entropy_scale": None,
-    "target_acc": None,
     "shuffle_data": None,
     "divergence_type": None,
+    "target_div": None,
     "initial_beta": None,
 })
 # __sphinx_doc_end__
