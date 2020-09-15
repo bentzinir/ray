@@ -112,6 +112,7 @@ def postprocess_trajectory(policy,
     sample_batch["disc_label"] = np.zeros_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
     sample_batch["l_agent"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
     sample_batch["leq_agent"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
+    sample_batch["eq_agent"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
     sample_batch["opponent_logp"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
     # todo: change logic below to support continuous actions
     sample_batch["opponent_action_dist"] = np.ones((len(sample_batch[SampleBatch.REWARDS]),
@@ -128,6 +129,7 @@ def postprocess_trajectory(policy,
                 sample_batch["opponent_action_dist"][i] = sample_batch["action_dist_inputs"][i]
             elif member_id == agent_id:
                 sample_batch["leq_agent"][i] = 1.
+                sample_batch["eq_agent"][i] = 1.
                 sample_batch["disc_label"][i] = AGENT_LABEL
             if 'infos' in sample_batch:
                 sample_batch[SampleBatch.DONES][i] = sample_batch[SampleBatch.DONES][i] or \
@@ -327,6 +329,9 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # Note: In the papers, alpha is used directly, here we take the log.
     # Discrete case: Multiply the action probs as weights with the original
     # loss terms (no expectations needed).
+    l_count = 1e-4 + tf.reduce_sum(train_batch["l_agent"])
+    leq_count = 1e-4 + tf.reduce_sum(train_batch["leq_agent"])
+    eq_count = 1e-4 + tf.reduce_sum(train_batch["eq_agent"])
     if model.discrete:
         # todo change 3: take the minimum over two Q functions as in the continuous case
         min_q_t = tf.stop_gradient(tf.reduce_min((q_t, twin_q_t), axis=0))
@@ -336,10 +341,10 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
                 # tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - tf.nn.log_softmax(min_q_t, axis=1)),
                 tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - min_q_t),
                 axis=-1))
-        entropy = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
-        alpha_backup = tf.stop_gradient(model.target_entropy - entropy)
+        entropy_vec = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
+        entropy = tf.reduce_sum(train_batch["eq_agent"] * entropy_vec) / eq_count
         # todo change 5: take log alpha instead of alpha
-        alpha_loss = -tf.reduce_mean(model.log_alpha * alpha_backup)
+        alpha_loss = - model.log_alpha * tf.stop_gradient(model.target_entropy - entropy)
     else:
         alpha_loss = -tf.reduce_mean(model.log_alpha * tf.stop_gradient(log_pis_t + model.target_entropy))
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
@@ -352,7 +357,6 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             tf.argmax(train_batch["opponent_action_dist"], axis=1, output_type=tf.int32))
         divergence_vec = tf.cast(divergence_vec, tf.float32)
         divergence_vec = divergence_vec * train_batch["l_agent"]
-        l_count = 1e-4 + tf.reduce_sum(train_batch["l_agent"])
         div_rate = tf.reduce_sum(divergence_vec) / l_count
     elif model.divergence_type in ['state_action', 'state']:
         d_t = model.get_d_values(model_out_t, actions=None)
@@ -362,7 +366,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         else:  # state-only discrimination mode
             d_t = tf.squeeze(d_t, axis=2)
         delta_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(train_batch["disc_label"], d_t)
-        leq_count = 1e-4 + tf.reduce_sum(train_batch["leq_agent"])
+
         delta_loss = tf.reduce_sum(train_batch["leq_agent"] * delta_loss_vec) / leq_count
         divergence_vec = tf.math.equal(train_batch["disc_label"],
                                        tf.argmax(d_t, axis=1, output_type=tf.int32))
