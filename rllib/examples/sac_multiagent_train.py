@@ -52,7 +52,8 @@ def get_parser():
     parser.add_argument("--vis_sleep", type=float, default=0.0)
     parser.add_argument("--yaml_config", type=str, default="none")
     parser.add_argument("--initial_alpha", type=float, default=1.0)
-    parser.add_argument("--initial_beta", type=float, default=0.0001)
+    parser.add_argument("--initial_beta", type=float, default=1.0)
+    parser.add_argument("--object_store_memory", type=int, default=500000000)
     return parser
 
 
@@ -72,7 +73,8 @@ def callback_builder():
         def on_episode_start(self, worker: RolloutWorker, base_env: BaseEnv,
                              policies: Dict[str, Policy],
                              episode: MultiAgentEpisode, **kwargs):
-            pass
+            for i in range(worker.env.nagents):
+                episode.user_data[f"episodic_return_{i}"] = []
 
         def on_episode_step(self, worker: RolloutWorker, base_env: BaseEnv,
                             episode: MultiAgentEpisode, **kwargs):
@@ -91,7 +93,8 @@ def callback_builder():
         def on_episode_end(self, worker: RolloutWorker, base_env: BaseEnv,
                            policies: Dict[str, Policy], episode: MultiAgentEpisode,
                            **kwargs):
-            pass
+            for i in range(worker.env.nagents):
+                episode.custom_metrics[f"episodic_return_{i}"] = episode.last_info_for(i)['episodic_return']
 
     return MyCallbacks
 
@@ -155,6 +158,7 @@ def get_config(args):
         "divergence_type": args.divergence_type,
         "prioritized_replay": False,  # todo: consider setting back to True
         "compress_observations": np.issubdtype(single_env.observation_space.dtype, np.integer),
+        # "learning_starts": 0,
     }
     config = update(config, override_config)
     return config
@@ -177,7 +181,8 @@ if __name__ == "__main__":
     args, extra_args = get_args()
 
     ray.init(num_cpus=args.num_cpus or None,
-             local_mode=args.local_mode)
+             local_mode=args.local_mode,
+             object_store_memory=args.object_store_memory)
 
     if args.debug:
         trainer = SACMATrainer(config=get_config(args))

@@ -35,7 +35,7 @@ class VisionNetwork(TFModelV2):
                 kernel,
                 strides=(stride, stride),
                 activation=activation,
-                padding="same",
+                # padding="same",
                 data_format="channels_last",
                 name="conv{}".format(i))(last_layer)
 

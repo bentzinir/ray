@@ -2,6 +2,7 @@ import gym
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.tests.test_rollout_worker import MockEnv, MockEnv2
 import numpy as np
+from collections import deque
 
 
 def make_multiagent(env_name_or_creator):
@@ -21,6 +22,8 @@ def make_multiagent(env_name_or_creator):
             self.dones = set()
             self.observation_space = self.agents[0].observation_space
             self.action_space = self.agents[0].action_space
+            self.reward_queues = [deque(maxlen=50) for _ in range(self.nagents)]
+            self.episode_rewards = [0 for _ in range(self.nagents)]
 
         def reset_i(self, i):
             return self.agents[i].reset()
@@ -38,10 +41,14 @@ def make_multiagent(env_name_or_creator):
                 if np.any(np.isnan(action)):
                     input("(MultiEnv) Nan detected...")
                 obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
+                self.episode_rewards[i] += rew[i]
+                info[i]['episodic_return'] = np.mean(self.reward_queues[i])
                 if done[i]:
                     self.dones.add(i)
                     obs[i] = self.reset_i(i)
                     done[i] = False
+                    self.reward_queues[i].append(self.episode_rewards[i])
+                    self.episode_rewards[i] = 0
                     info[i]['internal_done'] = True
                 else:
                     info[i]['internal_done'] = False
@@ -49,7 +56,7 @@ def make_multiagent(env_name_or_creator):
             return obs, rew, done, info
 
         def render(self):
-            [a.render() for a in self.agents]
+            [a.render() for i, a in enumerate(self.agents)]
 
     return MultiEnv
 

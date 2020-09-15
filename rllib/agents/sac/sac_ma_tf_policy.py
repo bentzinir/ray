@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 AGENT_LABEL = 0
 OPPONENT_LABEL = 1
-LEARN_IT = .1
 
 
 def build_sac_model(policy, obs_space, action_space, config):
@@ -102,7 +101,10 @@ def postprocess_trajectory(policy,
                            other_agent_batches=None,
                            episode=None):
     if other_agent_batches is not None:
-        for opponent_id in other_agent_batches.keys():
+        opponent_list = list(other_agent_batches.keys())
+        # nirbz: we overload only one opponent member at a time
+        opponent_list = [random.choice(opponent_list)]
+        for opponent_id in opponent_list:
             opponent_batch = other_agent_batches[opponent_id][1]
             for key in opponent_batch.keys():
                 sample_batch[key] = np.append(sample_batch[key], opponent_batch[key], axis=0)
@@ -179,23 +181,23 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     else:
         print("====== No Obs Normalization ======")
 
-    with tf.compat.v1.variable_scope("model_out_t", reuse=tf.compat.v1.AUTO_REUSE):
-        model_out_t, _ = model({
-            "obs": cur_obs,
-            "is_training": policy._get_is_training_placeholder(),
-        }, [], None)
+    # with tf.compat.v1.variable_scope("model_out_t", reuse=tf.compat.v1.AUTO_REUSE):
+    model_out_t, _ = model({
+        "obs": cur_obs,
+        "is_training": policy._get_is_training_placeholder(),
+    }, [], None)
 
-    with tf.compat.v1.variable_scope("model_out_tp1", reuse=tf.compat.v1.AUTO_REUSE):
-        model_out_tp1, _ = model({
-            "obs": next_obs,
-            "is_training": policy._get_is_training_placeholder(),
-        }, [], None)
+    # with tf.compat.v1.variable_scope("model_out_tp1", reuse=tf.compat.v1.AUTO_REUSE):
+    model_out_tp1, _ = model({
+        "obs": next_obs,
+        "is_training": policy._get_is_training_placeholder(),
+    }, [], None)
 
-    with tf.compat.v1.variable_scope("target_model_out_tp1", reuse=tf.compat.v1.AUTO_REUSE):
-        target_model_out_tp1, _ = policy.target_model({
-            "obs": next_obs,
-            "is_training": policy._get_is_training_placeholder(),
-        }, [], None)
+    # with tf.compat.v1.variable_scope("target_model_out_tp1", reuse=tf.compat.v1.AUTO_REUSE):
+    target_model_out_tp1, _ = policy.target_model({
+        "obs": next_obs,
+        "is_training": policy._get_is_training_placeholder(),
+    }, [], None)
 
     # Discrete case.
     if model.discrete:
@@ -226,9 +228,9 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         elif model.divergence_type in ['state', 'state_action']:
             d_tp1_target = policy.target_model.get_d_values(target_model_out_tp1, actions=None)
             logd_tp1_target = tf.nn.log_softmax(d_tp1_target, axis=1)
-            logd_tp1_target = tf.slice(logd_tp1_target, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
-            # todo: experiment with positive agent-based regularization in oppose to negative opponent-based pne
-            # logd_tp1_target = -tf.slice(logd_tp1_target, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
+            # todo: positive agent-based regularization in oppose to negative opponent-based pne
+            logd_tp1_target = -tf.slice(logd_tp1_target, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
+            # logd_tp1_target = tf.slice(logd_tp1_target, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
             if model.divergence_type == 'state':
                 logd_tp1_target = tf.tile(logd_tp1_target, multiples=[1, 1, q_t.shape.as_list()[-1]])
             logd_tp1_target = tf.squeeze(logd_tp1_target, axis=1)
@@ -327,11 +329,12 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # loss terms (no expectations needed).
     if model.discrete:
         # todo change 3: take the minimum over two Q functions as in the continuous case
-        min_q_t = tf.reduce_min((q_t, twin_q_t), axis=0)
+        min_q_t = tf.stop_gradient(tf.reduce_min((q_t, twin_q_t), axis=0))
         actor_loss = tf.reduce_mean(
             tf.reduce_sum(
-                # todo change 4: newly derived KL divergence loss function
-                tf.multiply(policy_t, model.alpha * log_pis_t - tf.nn.log_softmax(min_q_t, axis=1)),
+                # todo change 4: newly derived KL divergence loss function - now inactive
+                # tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - tf.nn.log_softmax(min_q_t, axis=1)),
+                tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - min_q_t),
                 axis=-1))
         entropy = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
         alpha_backup = tf.stop_gradient(model.target_entropy - entropy)
@@ -388,6 +391,8 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.beta_value = model.beta
     policy.target_div = model.target_div
     policy.div_rate = div_rate
+    policy.delta_penalty = logd_tp1_target
+    policy.entropy_penalty = log_pis_tp1_target
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
@@ -396,24 +401,18 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
 def gradients_fn(policy, optimizer, loss):
     # Eager: Use GradientTape.
+
+    # Bug fix: gradients are defined over non-filtered variable list
+    weights = policy.model.variables()
     if policy.config["framework"] in ["tf2", "tfe"]:
         tape = optimizer.tape
-        pol_weights = policy.model.policy_variables()
         actor_grads_and_vars = list(zip(tape.gradient(
-            policy.actor_loss, pol_weights), pol_weights))
-        q_weights = policy.model.q_variables()
+            policy.actor_loss, weights), weights))
+        critic_grads_and_vars = list(zip(tape.gradient(
+            policy.critic_loss[0], weights), weights))
         if policy.config["twin_q"]:
-            half_cutoff = len(q_weights) // 2
-            grads_1 = tape.gradient(
-                policy.critic_loss[0], q_weights[:half_cutoff])
-            grads_2 = tape.gradient(
-                policy.critic_loss[1], q_weights[half_cutoff:])
-            critic_grads_and_vars = \
-                list(zip(grads_1, q_weights[:half_cutoff])) + \
-                list(zip(grads_2, q_weights[half_cutoff:]))
-        else:
-            critic_grads_and_vars = list(zip(tape.gradient(
-                policy.critic_loss[0], q_weights), q_weights))
+            twin_critic_grads_and_vars = list(zip(tape.gradient(
+                policy.critic_loss[1], weights), weights))
 
         alpha_vars = [policy.model.log_alpha]
         alpha_grads_and_vars = list(zip(tape.gradient(
@@ -422,31 +421,30 @@ def gradients_fn(policy, optimizer, loss):
         beta_grads_and_vars = list(zip(tape.gradient(
             policy.beta_loss, beta_vars), beta_vars))
         if hasattr(policy.model, "d_net"):
+            # delta net is not granted access to state-preprocessor weights
             d_weights = policy.model.d_variables()
             delta_grads_and_vars = list(zip(tape.gradient(
                 policy.delta_loss, d_weights), d_weights))
     # Tf1.x: Use optimizer.compute_gradients()
+
     else:
         actor_grads_and_vars = policy._actor_optimizer.compute_gradients(
-            policy.actor_loss, var_list=policy.model.policy_variables())
+            policy.actor_loss, var_list=weights)
 
-        q_weights = policy.model.q_variables()
+        critic_grads_and_vars = policy._critic_optimizer.compute_gradients(
+            policy.critic_loss[0], var_list=weights)
         if policy.config["twin_q"]:
-            half_cutoff = len(q_weights) // 2
-            base_q_optimizer, twin_q_optimizer = policy._critic_optimizer
-            critic_grads_and_vars = base_q_optimizer.compute_gradients(
-                policy.critic_loss[0], var_list=q_weights[:half_cutoff]
-            ) + twin_q_optimizer.compute_gradients(
-                policy.critic_loss[1], var_list=q_weights[half_cutoff:])
+            twin_critic_grads_and_vars = policy._twin_critic_optimizer.compute_gradients(
+                policy.critic_loss[1], var_list=weights)
         else:
-            critic_grads_and_vars = policy._critic_optimizer[
-                0].compute_gradients(
-                    policy.critic_loss[0], var_list=q_weights)
+            twin_critic_grads_and_vars = []
+
         alpha_grads_and_vars = policy._alpha_optimizer.compute_gradients(
             policy.alpha_loss, var_list=[policy.model.log_alpha])
         beta_grads_and_vars = policy._beta_optimizer.compute_gradients(
             policy.beta_loss, var_list=[policy.model.log_beta])
         if hasattr(policy.model, "d_net"):
+            # delta net is not granted access to state-preprocessor weights
             delta_grads_and_vars = policy._delta_optimizer.compute_gradients(
                 policy.delta_loss, var_list=policy.model.d_variables())
 
@@ -461,6 +459,11 @@ def gradients_fn(policy, optimizer, loss):
         (clip_func(g), v) for (g, v) in actor_grads_and_vars if g is not None]
     policy._critic_grads_and_vars = [
         (clip_func(g), v) for (g, v) in critic_grads_and_vars if g is not None]
+    if policy.config["twin_q"]:
+        policy._twin_critic_grads_and_vars = [
+            (clip_func(g), v) for (g, v) in twin_critic_grads_and_vars if g is not None]
+    else:
+        policy._twin_critic_grads_and_vars = []
     policy._alpha_grads_and_vars = [
         (clip_func(g), v) for (g, v) in alpha_grads_and_vars if g is not None]
     if hasattr(policy.model, "d_net"):
@@ -472,9 +475,8 @@ def gradients_fn(policy, optimizer, loss):
         (clip_func(g), v) for (g, v) in beta_grads_and_vars if g is not None]
 
     grads_and_vars = (
-        policy._actor_grads_and_vars + policy._critic_grads_and_vars +
-        policy._alpha_grads_and_vars + policy._beta_grads_and_vars
-        + policy._delta_grads_and_vars)
+        policy._actor_grads_and_vars + policy._critic_grads_and_vars + policy._twin_critic_grads_and_vars +
+        policy._alpha_grads_and_vars + policy._beta_grads_and_vars + policy._delta_grads_and_vars)
     return grads_and_vars
 
 
@@ -482,17 +484,15 @@ def apply_gradients(policy, optimizer, grads_and_vars):
     actor_apply_ops = policy._actor_optimizer.apply_gradients(
         policy._actor_grads_and_vars)
 
-    cgrads = policy._critic_grads_and_vars
-    half_cutoff = len(cgrads) // 2
+    critic_apply_ops = policy._critic_optimizer.apply_gradients(
+        policy._critic_grads_and_vars)
+
     if policy.config["twin_q"]:
-        critic_apply_ops = [
-            policy._critic_optimizer[0].apply_gradients(cgrads[:half_cutoff]),
-            policy._critic_optimizer[1].apply_gradients(cgrads[half_cutoff:])
-        ]
+        twin_critic_apply_ops = [policy._twin_critic_optimizer.apply_gradients(
+            policy._twin_critic_grads_and_vars)]
     else:
-        critic_apply_ops = [
-            policy._critic_optimizer[0].apply_gradients(cgrads)
-        ]
+        twin_critic_apply_ops = []
+
     if hasattr(policy.model, "d_net"):
         delta_apply_ops = [policy._delta_optimizer.apply_gradients(
             policy._delta_grads_and_vars)]
@@ -505,7 +505,7 @@ def apply_gradients(policy, optimizer, grads_and_vars):
             policy._beta_optimizer.apply_gradients(policy._beta_grads_and_vars)
         return
     else:
-        apply_ops = [actor_apply_ops] + critic_apply_ops + delta_apply_ops
+        apply_ops = [actor_apply_ops] + [critic_apply_ops] + twin_critic_apply_ops + delta_apply_ops
         if policy.config["alpha"] is None:
             alpha_apply_ops = policy._alpha_optimizer.apply_gradients(
                 policy._alpha_grads_and_vars,
@@ -529,6 +529,7 @@ def stats(policy, train_batch):
         "alpha_loss": tf.reduce_mean(policy.alpha_loss),
         "alpha_value": tf.reduce_mean(policy.alpha_value),
         "beta_loss": tf.reduce_mean(policy.beta_loss),
+        "delta_loss": tf.reduce_mean(policy.delta_loss),
         "beta_value": tf.reduce_mean(policy.beta_value),
         "target_entropy": tf.constant(policy.target_entropy),
         "target_div": tf.constant(policy.target_div),
@@ -537,6 +538,8 @@ def stats(policy, train_batch):
         "min_q": tf.reduce_min(policy.q_t),
         "div_rate": tf.reduce_mean(policy.div_rate),
         "entropy": tf.reduce_mean(policy.entropy),
+        "entropy_penalty": tf.reduce_mean(policy.entropy_penalty),
+        "delta_penalty": tf.reduce_mean(policy.delta_penalty),
     }
 
 
@@ -548,16 +551,11 @@ class ActorCriticOptimizerMixin:
             self.global_step = get_variable(0, tf_name="global_step")
             self._actor_optimizer = tf.keras.optimizers.Adam(
                 learning_rate=config["optimization"]["actor_learning_rate"])
-            self._critic_optimizer = [
-                tf.keras.optimizers.Adam(
-                    learning_rate=config["optimization"][
-                        "critic_learning_rate"])
-            ]
+            self._critic_optimizer = tf.keras.optimizers.Adam(
+                    learning_rate=config["optimization"]["critic_learning_rate"])
             if config["twin_q"]:
-                self._critic_optimizer.append(
-                    tf.keras.optimizers.Adam(
-                        learning_rate=config["optimization"][
-                            "critic_learning_rate"]))
+                self._twin_critic_optimizer = tf.keras.optimizers.Adam(
+                        learning_rate=config["optimization"]["critic_learning_rate"])
             self._alpha_optimizer = tf.keras.optimizers.Adam(
                 learning_rate=config["optimization"]["entropy_learning_rate"])
             self._beta_optimizer = tf.keras.optimizers.Adam(
@@ -569,16 +567,11 @@ class ActorCriticOptimizerMixin:
             self.global_step = tf1.train.get_or_create_global_step()
             self._actor_optimizer = tf1.train.AdamOptimizer(
                 learning_rate=config["optimization"]["actor_learning_rate"])
-            self._critic_optimizer = [
-                tf1.train.AdamOptimizer(
-                    learning_rate=config["optimization"][
-                        "critic_learning_rate"])
-            ]
+            self._critic_optimizer = tf1.train.AdamOptimizer(
+                    learning_rate=config["optimization"]["critic_learning_rate"])
             if config["twin_q"]:
-                self._critic_optimizer.append(
-                    tf1.train.AdamOptimizer(
-                        learning_rate=config["optimization"][
-                            "critic_learning_rate"]))
+                self._twin_critic_optimizer = tf1.train.AdamOptimizer(
+                        learning_rate=config["optimization"]["critic_learning_rate"])
             self._alpha_optimizer = tf1.train.AdamOptimizer(
                 learning_rate=config["optimization"]["entropy_learning_rate"])
             self._beta_optimizer = tf1.train.AdamOptimizer(
@@ -586,6 +579,7 @@ class ActorCriticOptimizerMixin:
             if config["divergence_type"] in ["state_action", "state"]:
                 self._delta_optimizer = tf1.train.AdamOptimizer(
                     learning_rate=config["optimization"]["critic_learning_rate"])
+
 
 def setup_early_mixins(policy, obs_space, action_space, config):
     ActorCriticOptimizerMixin.__init__(policy, config)
