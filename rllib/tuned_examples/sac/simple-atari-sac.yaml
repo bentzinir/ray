@@ -7,7 +7,7 @@ maze_sac:
     config:
         # Works for both torch and tf.
         framework: tf
-        gamma: 0.95
+        gamma: 0.99
         no_done_at_end: false
         target_network_update_freq: 1
         tau: 0.005
@@ -25,9 +25,6 @@ maze_sac:
         policy_model:
           fcnet_activation: relu
           fcnet_hiddens: []
-        env_config:
-          warp_obs: true
-          warp_dim: 84
         metrics_smoothing_episodes: 20
         buffer_size: 400000
         model:
