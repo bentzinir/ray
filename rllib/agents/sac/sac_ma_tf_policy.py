@@ -4,19 +4,22 @@ import numpy as np
 import random
 import ray
 import ray.experimental.tf_utils
-from ray.rllib.agents.ddpg.ddpg_tf_policy import ComputeTDErrorMixin, \
-    TargetNetworkMixin
+from ray.rllib.agents.ddpg.ddpg_tf_policy import ComputeTDErrorMixin
 from ray.rllib.agents.dqn.dqn_tf_policy import postprocess_nstep_and_prio
-from ray.rllib.agents.sac.sac_ma_tf_model import SACMATFModel
-from ray.rllib.agents.sac.sac_torch_model import SACTorchModel
+from ray.rllib.agents.sac.sac_ma_tf_actor_model import SACMATFActorModel
+from ray.rllib.agents.sac.sac_ma_tf_critic_model import SACMATFCriticModel
+from ray.rllib.agents.sac.sac_ma_tf_delta_model import SACMATFDeltaModel
 from ray.rllib.models import ModelCatalog
 from ray.rllib.models.tf.tf_action_dist import Beta, Categorical, \
     DiagGaussian, SquashedGaussian
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.policy.tf_policy_template import build_tf_policy
 from ray.rllib.utils.error import UnsupportedSpaceException
-from ray.rllib.utils.framework import get_variable, try_import_tf, \
-    try_import_tfp
+from ray.rllib.utils.framework import get_variable, try_import_tf, try_import_tfp
+from ray.rllib.utils.tf_ops import make_tf_callable
+from ray.rllib.utils.annotations import override
+from ray.rllib.policy.tf_policy import TFPolicy
+
 
 tf1, tf, tfv = try_import_tf()
 tfp = try_import_tfp()
@@ -47,53 +50,84 @@ def build_sac_model(policy, obs_space, action_space, config):
     # Force-ignore any additionally provided hidden layer sizes.
     # Everything should be configured using SAC's "Q_model" and "policy_model"
     # settings.
-    policy.model = ModelCatalog.get_model_v2(
+
+    policy.actor = ModelCatalog.get_model_v2(
         obs_space=obs_space,
         action_space=action_space,
         num_outputs=num_outputs,
         model_config=config["model"],
         framework=config["framework"],
-        model_interface=SACTorchModel
-        if config["framework"] == "torch" else SACMATFModel,
-        name="sac_model",
+        model_interface=SACMATFActorModel,
+        name="actor_model",
         actor_hidden_activation=config["policy_model"]["fcnet_activation"],
         actor_hiddens=config["policy_model"]["fcnet_hiddens"],
-        critic_hidden_activation=config["Q_model"]["fcnet_activation"],
-        critic_hiddens=config["Q_model"]["fcnet_hiddens"],
-        twin_q=config["twin_q"],
         initial_alpha=config["initial_alpha"],
-        initial_beta=config["initial_beta"],
         target_entropy=config["target_entropy"],
         alpha=config["alpha"],
-        beta=config["beta"],
         entropy_scale=config["entropy_scale"],
-        target_div=config["target_div"],
-        divergence_type=config["divergence_type"],)
+        initial_beta=config["initial_beta"],
+        beta=config["beta"],
+        target_div=config["target_div"],)
 
-    policy.target_model = ModelCatalog.get_model_v2(
+    policy.critic = ModelCatalog.get_model_v2(
         obs_space=obs_space,
         action_space=action_space,
         num_outputs=num_outputs,
         model_config=config["model"],
         framework=config["framework"],
-        model_interface=SACTorchModel
-        if config["framework"] == "torch" else SACMATFModel,
-        name="target_sac_model",
-        actor_hidden_activation=config["policy_model"]["fcnet_activation"],
-        actor_hiddens=config["policy_model"]["fcnet_hiddens"],
+        model_interface=SACMATFCriticModel,
+        name="critic_model",
         critic_hidden_activation=config["Q_model"]["fcnet_activation"],
-        critic_hiddens=config["Q_model"]["fcnet_hiddens"],
-        twin_q=config["twin_q"],
-        initial_alpha=config["initial_alpha"],
-        initial_beta=config["initial_beta"],
-        target_entropy=config["target_entropy"],
-        alpha=config["alpha"],
-        beta=config["beta"],
-        entropy_scale=config["entropy_scale"],
-        target_div=config["target_div"],
-        divergence_type=config["divergence_type"],)
+        critic_hiddens=config["Q_model"]["fcnet_hiddens"],)
 
-    return policy.model
+    policy.target_critic = ModelCatalog.get_model_v2(
+        obs_space=obs_space,
+        action_space=action_space,
+        num_outputs=num_outputs,
+        model_config=config["model"],
+        framework=config["framework"],
+        model_interface=SACMATFCriticModel,
+        name="target_critic_model",
+        critic_hidden_activation=config["Q_model"]["fcnet_activation"],
+        critic_hiddens=config["Q_model"]["fcnet_hiddens"], )
+
+    if config["twin_q"]:
+        policy.twin_critic = ModelCatalog.get_model_v2(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=num_outputs,
+            model_config=config["model"],
+            framework=config["framework"],
+            model_interface=SACMATFCriticModel,
+            name="twin_critic_model",
+            critic_hidden_activation=config["Q_model"]["fcnet_activation"],
+            critic_hiddens=config["Q_model"]["fcnet_hiddens"], )
+
+        policy.target_twin_critic = ModelCatalog.get_model_v2(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=num_outputs,
+            model_config=config["model"],
+            framework=config["framework"],
+            model_interface=SACMATFCriticModel,
+            name="target_twin_critic_model",
+            critic_hidden_activation=config["Q_model"]["fcnet_activation"],
+            critic_hiddens=config["Q_model"]["fcnet_hiddens"], )
+
+    if config["divergence_type"] in ["state", "state_action"]:
+        policy.delta = ModelCatalog.get_model_v2(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=num_outputs,
+            model_config=config["model"],
+            framework=config["framework"],
+            model_interface=SACMATFDeltaModel,
+            name="delta_model",
+            critic_hidden_activation=config["Q_model"]["fcnet_activation"],
+            critic_hiddens=config["Q_model"]["fcnet_hiddens"],
+            divergence_type=config["divergence_type"],)
+
+    return policy.actor
 
 
 def postprocess_trajectory(policy,
@@ -102,12 +136,13 @@ def postprocess_trajectory(policy,
                            episode=None):
     if other_agent_batches is not None:
         opponent_list = list(other_agent_batches.keys())
-        # nirbz: we overload only one opponent member at a time
-        opponent_list = [random.choice(opponent_list)]
-        for opponent_id in opponent_list:
-            opponent_batch = other_agent_batches[opponent_id][1]
-            for key in opponent_batch.keys():
-                sample_batch[key] = np.append(sample_batch[key], opponent_batch[key], axis=0)
+        # overload only one opponent member at a time
+        if len(opponent_list) > 0:
+            opponent_list = [random.choice(opponent_list)]
+            for opponent_id in opponent_list:
+                opponent_batch = other_agent_batches[opponent_id][1]
+                for key in opponent_batch.keys():
+                    sample_batch[key] = np.append(sample_batch[key], opponent_batch[key], axis=0)
 
     sample_batch["disc_label"] = np.zeros_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
     sample_batch["l_agent"] = np.zeros_like(sample_batch[SampleBatch.REWARDS])
@@ -183,62 +218,79 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     else:
         print("====== No Obs Normalization ======")
 
-    # with tf.compat.v1.variable_scope("model_out_t", reuse=tf.compat.v1.AUTO_REUSE):
-    model_out_t, _ = model({
+    # actor models
+    actor_t, _ = policy.actor({
         "obs": cur_obs,
-        "is_training": policy._get_is_training_placeholder(),
-    }, [], None)
+        "is_training": policy._get_is_training_placeholder()}, [], None)
 
-    # with tf.compat.v1.variable_scope("model_out_tp1", reuse=tf.compat.v1.AUTO_REUSE):
-    model_out_tp1, _ = model({
+    actor_tp1, _ = policy.actor({
         "obs": next_obs,
-        "is_training": policy._get_is_training_placeholder(),
-    }, [], None)
+        "is_training": policy._get_is_training_placeholder()}, [], None)
 
-    # with tf.compat.v1.variable_scope("target_model_out_tp1", reuse=tf.compat.v1.AUTO_REUSE):
-    target_model_out_tp1, _ = policy.target_model({
+    # critic models
+    critic_t, _ = policy.critic({
+        "obs": cur_obs,
+        "is_training": policy._get_is_training_placeholder()}, [], None)
+
+    target_critic_tp1, _ = policy.target_critic({
         "obs": next_obs,
-        "is_training": policy._get_is_training_placeholder(),
-    }, [], None)
+        "is_training": policy._get_is_training_placeholder()}, [], None)
+
+    # twin critic models
+    if policy.config["twin_q"]:
+        twin_critic_t, _ = policy.twin_critic({
+            "obs": cur_obs,
+            "is_training": policy._get_is_training_placeholder()}, [], None)
+
+        target_twin_critic_tp1, _ = policy.target_twin_critic({
+            "obs": next_obs,
+            "is_training": policy._get_is_training_placeholder()}, [], None)
+
+    # delta models
+    if policy.config["divergence_type"] in ['state', 'state_action']:
+        delta_t, _ = policy.delta({
+            "obs": cur_obs,
+            "is_training": policy._get_is_training_placeholder()}, [], None)
+
+        delta_tp1, _ = policy.delta({
+            "obs": next_obs,
+            "is_training": policy._get_is_training_placeholder()}, [], None)
 
     # Discrete case.
-    if model.discrete:
+    if policy.actor.discrete:
         # Get all action probs directly from pi and form their logp.
-        log_pis_t = tf.nn.log_softmax(model.get_policy_output(model_out_t), -1)
+        log_pis_t = tf.nn.log_softmax(policy.actor.get_policy_output(actor_t), -1)
         policy_t = tf.math.exp(log_pis_t)
-        # todo change 1: we take log_pis_tp1 from the target model instead of from the model
-        log_pis_tp1_target = tf.nn.log_softmax(
-            policy.target_model.get_policy_output(target_model_out_tp1), -1)
-        # todo change 2: we take policy_tp1 from target model instead of from the model
-        policy_tp1_target = tf.math.exp(log_pis_tp1_target)
+        log_pis_tp1 = tf.nn.log_softmax(
+            policy.actor.get_policy_output(actor_tp1), -1)
+        policy_tp1 = tf.math.exp(log_pis_tp1)
         # Q-values.
-        q_t = model.get_q_values(model_out_t)
+        q_t = policy.critic.get_q_values(critic_t)
         # Target Q-values.
-        q_tp1 = policy.target_model.get_q_values(target_model_out_tp1)
+        q_tp1 = policy.target_critic.get_q_values(target_critic_tp1)
         if policy.config["twin_q"]:
-            twin_q_t = model.get_twin_q_values(model_out_t)
-            twin_q_tp1 = policy.target_model.get_twin_q_values(
-                target_model_out_tp1)
+            twin_q_t = policy.twin_critic.get_q_values(twin_critic_t)
+            twin_q_tp1 = policy.target_twin_critic.get_q_values(target_twin_critic_tp1)
             q_tp1 = tf.reduce_min((q_tp1, twin_q_tp1), axis=0)
-        q_tp1 -= model.alpha * log_pis_tp1_target
+        q_tp1 -= model.alpha * log_pis_tp1
 
         # Apply ensemble diversity regularization
-        if model.divergence_type == 'action':
+        if policy.config["divergence_type"] == 'action':
             # todo: clarify possible bug. penalty based on s_t instead of s_tp1
-            logd_tp1_target = tf.expand_dims(train_batch["opponent_logp"], axis=1)
-            logd_tp1_target = tf.tile(logd_tp1_target, multiples=[1, q_t.shape.as_list()[-1]])
-        elif model.divergence_type in ['state', 'state_action']:
-            d_tp1_target = policy.target_model.get_d_values(target_model_out_tp1, actions=None)
-            logd_tp1_target = tf.nn.log_softmax(d_tp1_target, axis=1)
-            # todo: positive agent-based regularization in oppose to negative opponent-based pne
-            logd_tp1_target = -tf.slice(logd_tp1_target, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
-            # logd_tp1_target = tf.slice(logd_tp1_target, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
-            if model.divergence_type == 'state':
-                logd_tp1_target = tf.tile(logd_tp1_target, multiples=[1, 1, q_t.shape.as_list()[-1]])
-            logd_tp1_target = tf.squeeze(logd_tp1_target, axis=1)
+            logd_tp1 = tf.expand_dims(train_batch["opponent_logp"], axis=1)
+            logd_tp1 = tf.tile(logd_tp1, multiples=[1, q_t.shape.as_list()[-1]])
+        elif policy.config["divergence_type"] in ['state', 'state_action']:
+            d_tp1 = policy.delta.get_d_values(delta_tp1, actions=None)
+            logd_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
+            # we choose positive agent-based regularization in oppose to negative opponent-based pne
+            logd_tp1 = -tf.slice(logd_tp1, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
+            # logd_tp1 = tf.slice(logd_tp1, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
+            if policy.config["divergence_type"] == 'state':
+                logd_tp1 = tf.tile(logd_tp1, multiples=[1, 1, q_t.shape.as_list()[-1]])
+            logd_tp1 = tf.squeeze(logd_tp1, axis=1)
         else:
             raise ValueError
-        q_tp1 -= model.beta * logd_tp1_target
+        q_tp1 -= policy.actor.beta * logd_tp1
 
         # Actually selected Q-values (from the actions batch).
         one_hot = tf.one_hot(
@@ -247,10 +299,8 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         if policy.config["twin_q"]:
             twin_q_t_selected = tf.reduce_sum(twin_q_t * one_hot, axis=-1)
         # Discrete case: "Best" means weighted by the policy (prob) outputs.
-        q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1_target, q_tp1), axis=-1)
-        q_tp1_best_masked = \
-            (1.0 - tf.cast(train_batch[SampleBatch.DONES], tf.float32)) * \
-            q_tp1_best
+        q_tp1_best = tf.reduce_sum(tf.multiply(policy_tp1, q_tp1), axis=-1)
+        q_tp1_best_masked = (1.0 - tf.cast(train_batch[SampleBatch.DONES], tf.float32)) * q_tp1_best
 
     # Continuous actions case.
     else:
@@ -329,28 +379,27 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # Note: In the papers, alpha is used directly, here we take the log.
     # Discrete case: Multiply the action probs as weights with the original
     # loss terms (no expectations needed).
-    l_count = 1e-4 + tf.reduce_sum(train_batch["l_agent"])
-    leq_count = 1e-4 + tf.reduce_sum(train_batch["leq_agent"])
-    eq_count = 1e-4 + tf.reduce_sum(train_batch["eq_agent"])
+    l_count = 1e-8 + tf.reduce_sum(train_batch["l_agent"])
+    leq_count = 1e-8 + tf.reduce_sum(train_batch["leq_agent"])
+    eq_count = 1e-8 + tf.reduce_sum(train_batch["eq_agent"])
     if model.discrete:
-        # todo change 3: take the minimum over two Q functions as in the continuous case
         min_q_t = tf.stop_gradient(tf.reduce_min((q_t, twin_q_t), axis=0))
         actor_loss = tf.reduce_mean(
             tf.reduce_sum(
-                # todo change 4: newly derived KL divergence loss function - now inactive
+                # todo: experiment with the newly derived actor loss
                 # tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - tf.nn.log_softmax(min_q_t, axis=1)),
                 tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - min_q_t),
                 axis=-1))
         entropy_vec = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
         entropy = tf.reduce_sum(train_batch["eq_agent"] * entropy_vec) / eq_count
-        # todo change 5: take log alpha instead of alpha
+        # take log alpha instead of alpha
         alpha_loss = - model.log_alpha * tf.stop_gradient(model.target_entropy - entropy)
     else:
         alpha_loss = -tf.reduce_mean(model.log_alpha * tf.stop_gradient(log_pis_t + model.target_entropy))
         actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
 
     # Train diversity model
-    if model.divergence_type == 'action':
+    if policy.config["divergence_type"] == 'action':
         delta_loss = 0  # non-parametric diversity regularization mode
         divergence_vec = tf.math.not_equal(
             tf.argmax(policy_t, axis=1, output_type=tf.int32),
@@ -358,9 +407,9 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         divergence_vec = tf.cast(divergence_vec, tf.float32)
         divergence_vec = divergence_vec * train_batch["l_agent"]
         div_rate = tf.reduce_sum(divergence_vec) / l_count
-    elif model.divergence_type in ['state_action', 'state']:
-        d_t = model.get_d_values(model_out_t, actions=None)
-        if model.divergence_type == 'state_action':
+    elif policy.config["divergence_type"] in ['state_action', 'state']:
+        d_t = policy.delta.get_d_values(delta_t, actions=None)
+        if policy.delta.divergence_type == 'state_action':
             one_hot_3d = tf.tile(tf.expand_dims(one_hot, axis=1), multiples=[1, 2, 1])
             d_t = tf.reduce_sum(one_hot_3d * d_t, axis=2)
         else:  # state-only discrimination mode
@@ -387,16 +436,16 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     policy.actor_loss = actor_loss
     policy.critic_loss = critic_loss
     policy.alpha_loss = alpha_loss
-    policy.alpha_value = model.alpha
+    policy.alpha_value = policy.actor.alpha
     policy.entropy = entropy
-    policy.target_entropy = model.target_entropy
+    policy.target_entropy = policy.actor.target_entropy
     policy.delta_loss = delta_loss
     policy.beta_loss = beta_loss
-    policy.beta_value = model.beta
-    policy.target_div = model.target_div
+    policy.beta_value = policy.actor.beta
+    policy.target_div = policy.actor.target_div
     policy.div_rate = div_rate
-    policy.delta_penalty = logd_tp1_target
-    policy.entropy_penalty = log_pis_tp1_target
+    policy.delta_penalty = logd_tp1
+    policy.entropy_penalty = log_pis_tp1
 
     # in a custom apply op we handle the losses separately, but return them
     # combined in one loss for now
@@ -407,50 +456,44 @@ def gradients_fn(policy, optimizer, loss):
     # Eager: Use GradientTape.
 
     # Bug fix: gradients are defined over non-filtered variable list
-    weights = policy.model.variables()
     if policy.config["framework"] in ["tf2", "tfe"]:
         tape = optimizer.tape
         actor_grads_and_vars = list(zip(tape.gradient(
-            policy.actor_loss, weights), weights))
+            policy.actor_loss, policy.actor.variables()), policy.actor.variables()))
         critic_grads_and_vars = list(zip(tape.gradient(
-            policy.critic_loss[0], weights), weights))
+            policy.critic_loss[0], policy.critic.variables()), policy.critic.variables()))
         if policy.config["twin_q"]:
             twin_critic_grads_and_vars = list(zip(tape.gradient(
-                policy.critic_loss[1], weights), weights))
+                policy.critic_loss[1], policy.twin_critic.variables()), policy.twin_critic.variables()))
 
-        alpha_vars = [policy.model.log_alpha]
         alpha_grads_and_vars = list(zip(tape.gradient(
-            policy.alpha_loss, alpha_vars), alpha_vars))
-        beta_vars = [policy.model.log_beta]
+            policy.alpha_loss, [policy.actor.log_alpha]), [policy.actor.log_alpha]))
         beta_grads_and_vars = list(zip(tape.gradient(
-            policy.beta_loss, beta_vars), beta_vars))
-        if hasattr(policy.model, "d_net"):
-            # delta net is not granted access to state-preprocessor weights
-            d_weights = policy.model.d_variables()
+            policy.beta_loss, [policy.actor.log_beta]), [policy.actor.log_beta]))
+        if hasattr(policy, "delta"):
             delta_grads_and_vars = list(zip(tape.gradient(
-                policy.delta_loss, d_weights), d_weights))
-    # Tf1.x: Use optimizer.compute_gradients()
+                policy.delta_loss, policy.delta.variables()), policy.delta.variables()))
 
+    # Tf1.x: Use optimizer.compute_gradients()
     else:
         actor_grads_and_vars = policy._actor_optimizer.compute_gradients(
-            policy.actor_loss, var_list=weights)
+            policy.actor_loss, var_list=policy.actor.variables())
 
         critic_grads_and_vars = policy._critic_optimizer.compute_gradients(
-            policy.critic_loss[0], var_list=weights)
+            policy.critic_loss[0], var_list=policy.critic.variables())
         if policy.config["twin_q"]:
             twin_critic_grads_and_vars = policy._twin_critic_optimizer.compute_gradients(
-                policy.critic_loss[1], var_list=weights)
+                policy.critic_loss[1], var_list=policy.twin_critic.variables())
         else:
             twin_critic_grads_and_vars = []
 
         alpha_grads_and_vars = policy._alpha_optimizer.compute_gradients(
-            policy.alpha_loss, var_list=[policy.model.log_alpha])
+            policy.alpha_loss, var_list=[policy.actor.log_alpha])
         beta_grads_and_vars = policy._beta_optimizer.compute_gradients(
-            policy.beta_loss, var_list=[policy.model.log_beta])
-        if hasattr(policy.model, "d_net"):
-            # delta net is not granted access to state-preprocessor weights
+            policy.beta_loss, var_list=[policy.actor.log_beta])
+        if hasattr(policy, "delta"):
             delta_grads_and_vars = policy._delta_optimizer.compute_gradients(
-                policy.delta_loss, var_list=policy.model.d_variables())
+                policy.delta_loss, var_list=policy.delta.variables())
 
     # Clip if necessary.
     if policy.config["grad_clip"]:
@@ -545,6 +588,39 @@ def stats(policy, train_batch):
         "entropy_penalty": tf.reduce_mean(policy.entropy_penalty),
         "delta_penalty": tf.reduce_mean(policy.delta_penalty),
     }
+
+
+class TargetNetworkMixin:
+    def __init__(self, config):
+        @make_tf_callable(self.get_session())
+        def update_target_fn(tau):
+            tau = tf.convert_to_tensor(tau, dtype=tf.float32)
+            update_target_expr = []
+            model_vars = self.critic.variables()
+            target_model_vars = self.target_critic.variables()
+            if config["twin_q"]:
+                model_vars += self.twin_critic.variables()
+                target_model_vars += self.target_twin_critic.variables()
+            assert len(model_vars) == len(target_model_vars), \
+                (model_vars, target_model_vars)
+            for var, var_target in zip(model_vars, target_model_vars):
+                update_target_expr.append(
+                    var_target.assign(tau * var + (1.0 - tau) * var_target))
+                logger.debug("Update target op {}".format(var_target))
+            return tf.group(*update_target_expr)
+
+        # Hard initial update.
+        self._do_update = update_target_fn
+        self.update_target(tau=1.0)
+
+    # Support both hard and soft sync.
+    def update_target(self, tau=None):
+        self._do_update(np.float32(tau or self.config.get("tau")))
+
+    # @override(TFPolicy)
+    # def variables(self):
+    #     assert False, "do we need to be here?"
+    #     return self.model.variables() + self.target_model.variables()
 
 
 class ActorCriticOptimizerMixin:
