@@ -98,10 +98,18 @@ class SACMATFActorModel(TFModelV2):
             initial_beta = beta
             print(f":::setting a constant beta value! ({beta}):::")
         self.log_beta = tf.Variable(
-            np.log(initial_beta), dtype=tf.float32, name="log_beta")
+                            np.log(initial_beta), dtype=tf.float32, name="log_beta",
+                            constraint=lambda x: tf.clip_by_value(x, np.log(1e-15), np.log(100)))
         self.beta = tf.exp(self.log_beta)
-        self.target_div = target_div
-        self.register_variables([self.log_beta])
+        self.target_div = tf.Variable(target_div, dtype=tf.float32, name="target_div")
+        self.register_variables([self.log_beta, self.target_div])
+        self.updated_target_div = False
+
+    def update_target_div(self, x, session):
+        if not self.updated_target_div:
+            print(f"Updating target divergence value: {x}")
+            session.run(self.target_div.assign(x))
+            self.updated_target_div = True
 
     def get_policy_output(self, model_out):
         """Return the action output for the most recent forward pass.

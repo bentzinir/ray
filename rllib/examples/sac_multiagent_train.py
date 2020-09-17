@@ -14,6 +14,7 @@ import yaml
 from ray.rllib.examples.env.maze_env import MazeEnv
 import collections.abc
 import numpy as np
+from ray.rllib.models.tf.visionnet_no_v import VisionNetworkNoV
 
 
 def get_parser():
@@ -159,6 +160,10 @@ def get_config(args):
         "prioritized_replay": False,  # todo: consider setting back to True
         "compress_observations": np.issubdtype(single_env.observation_space.dtype, np.integer),
         # "learning_starts": 0,
+        "model": {
+            "custom_model": None if isinstance(obs_space, gym.spaces.Discrete) or len(obs_space.shape) <= 2
+                                        else VisionNetworkNoV
+        }
     }
     config = update(config, override_config)
     return config
