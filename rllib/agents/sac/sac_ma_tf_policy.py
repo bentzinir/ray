@@ -174,6 +174,10 @@ def postprocess_trajectory(policy,
         if policy.config["shuffle_data"]:
             j = random.choice(range(len(sample_batch['t'])))
             sample_batch = sample_batch.slice(j, j+1)
+        # update the target divergence of the primary agent to a negative value. This forces beta to go to zero no
+        # matter wht the delta network predicts. In addition we clip beta for safety cautions.
+        if agent_id == 0:
+            policy.actor.update_target_div(-1, session=policy.get_session())
     return postprocess_nstep_and_prio(policy, sample_batch)
 
 
@@ -203,6 +207,21 @@ def get_distribution_inputs_and_class(policy,
     distribution_inputs = model.get_policy_output(model_out)
     action_dist_class = get_dist_class(policy.config, policy.action_space)
     return distribution_inputs, action_dist_class, state_out
+
+
+# obs visualization function for debugging
+def plot_obs(obs):
+    import matplotlib.pyplot as plt
+    x = obs.numpy()[0]
+    h, w, c = x.shape
+    plt.figure("Fig")
+    plt.show()
+    for i in range(c):
+        framei = x[:, :, i]
+        plt.imshow(framei, vmin=0, vmax=255)
+        plt.draw()
+        plt.pause(0.01)
+    return
 
 
 def sac_actor_critic_loss(policy, model, _, train_batch):
@@ -579,7 +598,7 @@ def stats(policy, train_batch):
         "delta_loss": tf.reduce_mean(policy.delta_loss),
         "beta_value": tf.reduce_mean(policy.beta_value),
         "target_entropy": tf.constant(policy.target_entropy),
-        "target_div": tf.constant(policy.target_div),
+        "target_div": policy.target_div,
         "mean_q": tf.reduce_mean(policy.q_t),
         "max_q": tf.reduce_max(policy.q_t),
         "min_q": tf.reduce_min(policy.q_t),
