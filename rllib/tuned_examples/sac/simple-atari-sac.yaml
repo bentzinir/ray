@@ -17,7 +17,7 @@ maze_sac:
             actor_learning_rate: 0.00025
             critic_learning_rate: 0.00025
             entropy_learning_rate: 0.00025
-        learning_starts: 50000
+        learning_starts: 5000
         use_state_preprocessor: true
         Q_model:
           fcnet_activation: relu
