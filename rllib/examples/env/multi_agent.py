@@ -20,12 +20,20 @@ def make_multiagent(env_name_or_creator):
                 dim = config.pop("warp_dim", None)
                 self.agents = [WarpFrame(agent, dim=dim) for agent in self.agents]
             self.dones = set()
+            if hasattr(self.agents[0], 'spec'):
+                # todo: do we need to scale the spec according to nagents? for example num_steps?
+                self.spec = self.agents[0].spec
             self.observation_space = self.agents[0].observation_space
             self.action_space = self.agents[0].action_space
             self.reward_queues = [deque(maxlen=50) for _ in range(self.nagents)]
             self.episode_rewards = [0 for _ in range(self.nagents)]
+            self.nresets = [0 for _ in range(self.nagents)]
+            self.elapsed = [0 for _ in range(self.nagents)]
 
         def reset_i(self, i):
+            self.nresets[i] += 1
+            self.elapsed[i] = 0
+            self.episode_rewards[i] = 0
             return self.agents[i].reset()
 
         def reset(self):
@@ -38,17 +46,18 @@ def make_multiagent(env_name_or_creator):
         def step(self, action_dict):
             obs, rew, done, info = {}, {}, {}, {}
             for i, action in action_dict.items():
+                self.elapsed[i] += 1
                 if np.any(np.isnan(action)):
                     input("(MultiEnv) Nan detected...")
                 obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
                 self.episode_rewards[i] += rew[i]
                 info[i]['episodic_return'] = np.mean(self.reward_queues[i])
+                info[i]['nresets'] = self.nresets[i]
                 if done[i]:
                     self.dones.add(i)
+                    self.reward_queues[i].append(self.episode_rewards[i])
                     obs[i] = self.reset_i(i)
                     done[i] = False
-                    self.reward_queues[i].append(self.episode_rewards[i])
-                    self.episode_rewards[i] = 0
                     info[i]['internal_done'] = True
                 else:
                     info[i]['internal_done'] = False

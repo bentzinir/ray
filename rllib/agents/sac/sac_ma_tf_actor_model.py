@@ -107,7 +107,10 @@ class SACMATFActorModel(TFModelV2):
     def update_target_div(self, x, session):
         if not self.updated_target_div:
             print(f"Updating target divergence value: {x}")
-            session.run(self.target_div.assign(x))
+            if session is None:
+                self.target_div.assign(x)
+            else:
+                session.run(self.target_div.assign(x))
             self.updated_target_div = True
 
     def get_policy_output(self, model_out):
