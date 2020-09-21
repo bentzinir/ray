@@ -70,7 +70,7 @@ def make_multiagent(env_name_or_creator):
                     rew[self.idx2id(idx)] = 0
                     done[self.idx2id(idx)] = False
                     info[self.idx2id(idx)] = {}
-            done["__all__"] = False  # len(self.dones) == self.nagents
+            done["__all__"] = len(self.dones) == self.nagents
             return obs, rew, done, info
 
         def render(self):
