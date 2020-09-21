@@ -25,9 +25,10 @@ maze_sac:
         policy_model:
           fcnet_activation: relu
           fcnet_hiddens: []
-        metrics_smoothing_episodes: 20
+        metrics_smoothing_episodes: 5
         buffer_size: 400000
         model:
           conv_filters: [[32, [8, 8], 4], [64, [4, 4], 2], [64, [3, 3], 1], [1024, [7, 7], 1]]
           # conv_filters: [[16, [8, 8], 4], [32, [4, 4], 2], [256, [11, 11], 1]]
-        horizon: 18000
+        horizon: 10000
+        soft_horizon: true

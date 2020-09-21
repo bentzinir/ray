@@ -94,8 +94,8 @@ def callback_builder():
                            policies: Dict[str, Policy], episode: MultiAgentEpisode,
                            **kwargs):
             for i in range(worker.env.nagents):
-                episode.custom_metrics[f"episodic_return_{i}"] = episode.last_info_for(i)['episodic_return']
-                episode.custom_metrics[f"nresets_{i}"] = episode.last_info_for(i)['nresets']
+                episode.custom_metrics[f"episodic_return_{i}"] = np.mean(worker.env.reward_queues[i])
+                episode.custom_metrics[f"nresets_{i}"] = worker.env.nresets[i]
 
     return MyCallbacks
 
@@ -140,7 +140,7 @@ def get_config(args):
         "callbacks": callback_builder(),
         "multiagent": {
             "policies": policies,
-            "policy_mapping_fn": (lambda x: f"policy_{x}"),
+            "policy_mapping_fn": (lambda x: f"policy_{x[0]}"),
             "observation_fn": central_critic_observer,
         },
         "alpha": args.alpha,
@@ -159,7 +159,7 @@ def get_config(args):
         "divergence_type": args.divergence_type,
         "prioritized_replay": False,  # todo: consider setting back to True
         "compress_observations": np.issubdtype(single_env.observation_space.dtype, np.integer),
-        # "learning_starts": 0,
+        # "learning_starts": args.learning_starts,
         "model": {
             "custom_model": None if isinstance(obs_space, gym.spaces.Discrete) or len(obs_space.shape) <= 2
                                         else VisionNetworkNoV

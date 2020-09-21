@@ -40,28 +40,37 @@ def make_multiagent(env_name_or_creator):
             self.dones = set()
             obses = {}
             for aidx in range(self.nagents):
-                obses[aidx] = self.reset_i(aidx)
+                obses[self.idx2id(aidx)] = self.reset_i(aidx)
             return obses
+
+        def id2idx(self, agent_id):
+            return int(agent_id[0])
+
+        def idx2id(self, idx):
+            return f"{idx}_{self.nresets[idx]}"
 
         def step(self, action_dict):
             obs, rew, done, info = {}, {}, {}, {}
-            for i, action in action_dict.items():
-                self.elapsed[i] += 1
+            for agent_id, action in action_dict.items():
+                idx = self.id2idx(agent_id)
+                self.elapsed[idx] += 1
                 if np.any(np.isnan(action)):
                     input("(MultiEnv) Nan detected...")
-                obs[i], rew[i], done[i], info[i] = self.agents[i].step(action)
-                self.episode_rewards[i] += rew[i]
-                info[i]['episodic_return'] = np.mean(self.reward_queues[i])
-                info[i]['nresets'] = self.nresets[i]
-                if done[i]:
-                    self.dones.add(i)
-                    self.reward_queues[i].append(self.episode_rewards[i])
-                    obs[i] = self.reset_i(i)
-                    done[i] = False
-                    info[i]['internal_done'] = True
-                else:
-                    info[i]['internal_done'] = False
-            done["__all__"] = len(self.dones) == self.nagents
+                obs[agent_id], rew[agent_id], done[agent_id], info[agent_id] = self.agents[idx].step(action)
+                self.episode_rewards[idx] += rew[agent_id]
+                # info[agent_id]['episodic_return'] = np.mean(self.reward_queues[idx])
+                info[agent_id]['nresets'] = self.nresets[idx]
+                if done[agent_id]:
+                    self.dones.add(idx)
+                    self.reward_queues[idx].append(self.episode_rewards[idx])
+                    # reset agent at idx. This will also modify agent_id of idx.
+                    obs_i = self.reset_i(idx)
+                    # spawn a new agent id at idx
+                    obs[self.idx2id(idx)] = obs_i
+                    rew[self.idx2id(idx)] = 0
+                    done[self.idx2id(idx)] = False
+                    info[self.idx2id(idx)] = {}
+            done["__all__"] = False  # len(self.dones) == self.nagents
             return obs, rew, done, info
 
         def render(self):
