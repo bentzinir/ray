@@ -74,8 +74,7 @@ def callback_builder():
         def on_episode_start(self, worker: RolloutWorker, base_env: BaseEnv,
                              policies: Dict[str, Policy],
                              episode: MultiAgentEpisode, **kwargs):
-            for i in range(worker.env.nagents):
-                episode.user_data[f"episodic_return_{i}"] = []
+            pass
 
         def on_episode_step(self, worker: RolloutWorker, base_env: BaseEnv,
                             episode: MultiAgentEpisode, **kwargs):
@@ -96,6 +95,7 @@ def callback_builder():
                            **kwargs):
             for i in range(worker.env.nagents):
                 episode.custom_metrics[f"episodic_return_{i}"] = episode.last_info_for(i)['episodic_return']
+                episode.custom_metrics[f"nresets_{i}"] = episode.last_info_for(i)['nresets']
 
     return MyCallbacks
 
