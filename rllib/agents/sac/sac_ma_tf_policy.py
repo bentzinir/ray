@@ -167,8 +167,6 @@ def postprocess_trajectory(policy,
                 sample_batch["leq_agent"][i] = 1.
                 sample_batch["eq_agent"][i] = 1.
                 sample_batch["disc_label"][i] = AGENT_LABEL
-            else:
-                raise AssertionError
         if policy.config["shuffle_data"]:
             j = random.choice(range(len(sample_batch['t'])))
             sample_batch = sample_batch.slice(j, j+1)
