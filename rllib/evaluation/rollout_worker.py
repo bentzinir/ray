@@ -364,19 +364,12 @@ class RolloutWorker(ParallelIteratorWorker):
             self.env.agents = [wrap(a) for a in self.env.agents]
             assert isinstance(policy, dict)
             for aidx in range(self.env.nagents):
-                policy_name = policy_mapping_fn(aidx)
+                policy_name = policy_mapping_fn(f"{aidx}")
                 policy_a_list = list(policy[policy_name])
                 policy_a_list[1] = self.env.agents[aidx].observation_space
                 policy[policy_name] = tuple(policy_a_list)
         else:
             self.env: EnvType = wrap(self.env)
-
-        if 'ensemble_size' in policy_config:
-            from ray.rllib.env.ensemble import Ensemble
-            self.env = Ensemble(self.env, ensemble_size=policy_config['ensemble_size'])
-        if 'partial_ensemble_size' in policy_config:
-            from ray.rllib.env.action_mux import ActionMux
-            self.env = ActionMux(self.env, ensemble_size=policy_config['partial_ensemble_size'])
 
         def make_env(vector_index):
             return wrap(

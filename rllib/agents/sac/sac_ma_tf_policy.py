@@ -154,8 +154,9 @@ def postprocess_trajectory(policy,
                                                    policy.model.action_space.n), dtype=np.float32)
 
     if 'agent_id' in sample_batch:
-        agent_id = sample_batch["agent_id"][0]
-        for i, member_id in enumerate(sample_batch['agent_id']):
+        agent_id = int(sample_batch["agent_id"][0][0])
+        for i, member_agent_id in enumerate(sample_batch['agent_id']):
+            member_id = int(member_agent_id[0])
             if member_id < agent_id:
                 sample_batch["l_agent"][i] = 1.
                 sample_batch["leq_agent"][i] = 1.
@@ -166,9 +167,6 @@ def postprocess_trajectory(policy,
                 sample_batch["leq_agent"][i] = 1.
                 sample_batch["eq_agent"][i] = 1.
                 sample_batch["disc_label"][i] = AGENT_LABEL
-            if 'infos' in sample_batch:
-                sample_batch[SampleBatch.DONES][i] = sample_batch[SampleBatch.DONES][i] or \
-                                                     sample_batch['infos'][i]['internal_done']
             else:
                 raise AssertionError
         if policy.config["shuffle_data"]:
