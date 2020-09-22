@@ -138,6 +138,30 @@ class FireResetEnv(gym.Wrapper):
         return self.env.step(ac)
 
 
+class LoopFireResetEnv(gym.Wrapper):
+    def __init__(self, env):
+        """Take action on reset.
+
+        For environments that are fixed until firing."""
+        gym.Wrapper.__init__(self, env)
+        assert env.unwrapped.get_action_meanings()[1] == "FIRE"
+        assert len(env.unwrapped.get_action_meanings()) >= 3
+
+    def reset(self, **kwargs):
+        done = True
+        reset_count = 0
+        while done:
+            reset_count += 1
+            self.env.reset(**kwargs)
+            obs, _, done, _ = self.env.step(1)
+            if reset_count == 10:
+                raise AssertionError
+        return obs
+
+    def step(self, ac):
+        return self.env.step(ac)
+
+
 class EpisodicLifeEnv(gym.Wrapper):
     def __init__(self, env):
         """Make end-of-life == end-of-episode, but only reset on true game over.
@@ -282,7 +306,9 @@ def wrap_deepmind(env, dim=84, framestack=True):
         env = MaxAndSkipEnv(env, skip=4)
     env = EpisodicLifeEnv(env)
     if "FIRE" in env.unwrapped.get_action_meanings():
-        env = FireResetEnv(env)
+        # nirbz: FireResetEnv wrapper fails to initialize under some conditions
+        # env = FireResetEnv(env)
+        env = LoopFireResetEnv(env)
     env = WarpFrame(env, dim)
     # env = ScaledFloatFrame(env)  # TODO: use for dqn?
     # env = ClipRewardEnv(env)  # reward clipping is handled by policy eval
