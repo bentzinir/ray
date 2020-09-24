@@ -77,8 +77,7 @@ class SACMATFActorModel(TFModelV2):
             initial_alpha = alpha
             print(f":::setting a constant alpha value! ({alpha}):::")
 
-        self.log_alpha = tf.Variable(np.log(initial_alpha), dtype=tf.float32, name="log_alpha",
-                                     constraint=lambda x: tf.clip_by_value(x, np.log(1e-10), np.log(10)))
+        self.log_alpha = tf.Variable(np.log(initial_alpha), dtype=tf.float32, name="log_alpha")
         self.alpha = tf.exp(self.log_alpha)
 
         # Auto-calculate the target entropy.
@@ -98,7 +97,7 @@ class SACMATFActorModel(TFModelV2):
             initial_beta = beta
             print(f":::setting a constant beta value! ({beta}):::")
         self.log_beta = tf.Variable(np.log(initial_beta), dtype=tf.float32, name="log_beta",
-                                    constraint=lambda x: tf.clip_by_value(x, np.log(1e-10), np.log(10)))
+                                    constraint=lambda x: tf.clip_by_value(x, np.log(1e-10), np.log(100)))
         self.beta = tf.exp(self.log_beta)
         self.target_div = tf.Variable(target_div, dtype=tf.float32, name="target_div")
         self.register_variables([self.log_beta, self.target_div])

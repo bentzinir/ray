@@ -287,7 +287,8 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             twin_q_t = policy.twin_critic.get_q_values(twin_critic_t)
             twin_q_tp1 = policy.target_twin_critic.get_q_values(target_twin_critic_tp1)
             q_tp1 = tf.reduce_min((q_tp1, twin_q_tp1), axis=0)
-        q_tp1 -= model.alpha * log_pis_tp1
+        # todo: disabled critic entropy regularization
+        # q_tp1 -= model.alpha * log_pis_tp1
 
         # Apply ensemble diversity regularization
         if policy.config["divergence_type"] == 'action':
@@ -406,7 +407,10 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
                 tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - min_q_t),
                 axis=-1))
         entropy_vec = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
-        entropy = tf.reduce_sum(train_batch["eq_agent"] * entropy_vec) / eq_count
+        # entropy = tf.reduce_sum(train_batch["eq_agent"] * entropy_vec) / eq_count
+        # todo: debugging the difference between entropy and entropy penalty
+        entropy = tf.reduce_mean(entropy_vec)
+
         # take log alpha instead of alpha
         alpha_loss = - model.log_alpha * tf.stop_gradient(model.target_entropy - entropy)
     else:
