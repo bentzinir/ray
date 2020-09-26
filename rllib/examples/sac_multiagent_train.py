@@ -54,7 +54,7 @@ def get_parser():
     parser.add_argument("--yaml_config", type=str, default="none")
     parser.add_argument("--initial_alpha", type=float, default=1.0)
     parser.add_argument("--initial_beta", type=float, default=1.0)
-    parser.add_argument("--object_store_memory", type=int, default=500000000)
+    parser.add_argument("--object_store_memory", type=int, default=1000000000)
     return parser
 
 
@@ -100,11 +100,6 @@ def callback_builder():
     return MyCallbacks
 
 
-def central_critic_observer(agent_obs, **kw):
-    """Rewrites the agent obs to include opponent data for training."""
-    return agent_obs
-
-
 def get_config(args):
     # Get obs- and action Spaces.
     if isinstance(args.env, str):
@@ -141,7 +136,6 @@ def get_config(args):
         "multiagent": {
             "policies": policies,
             "policy_mapping_fn": (lambda x: f"policy_{x[0]}"),
-            "observation_fn": central_critic_observer,
         },
         "alpha": args.alpha,
         "beta": args.beta,
