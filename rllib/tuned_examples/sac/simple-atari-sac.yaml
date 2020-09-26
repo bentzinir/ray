@@ -25,7 +25,7 @@ maze_sac:
         policy_model:
           fcnet_activation: relu
           fcnet_hiddens: []
-        metrics_smoothing_episodes: 5
+        metrics_smoothing_episodes: 20
         buffer_size: 400000
         model:
           conv_filters: [[32, [8, 8], 4], [64, [4, 4], 2], [64, [3, 3], 1], [1024, [7, 7], 1]]
