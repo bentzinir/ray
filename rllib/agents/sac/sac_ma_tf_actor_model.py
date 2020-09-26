@@ -71,6 +71,9 @@ class SACMATFActorModel(TFModelV2):
         self.action_model.build(self.model_out.shape)
         self.register_variables(self.action_model.variables)
 
+        self.policy_id = tf.Variable(-1, dtype=tf.int32, name="policy_id", trainable=False)
+        self.register_variables([self.policy_id])
+        self.updated_policy_id = False
         ######################
         # ALPHA
         if alpha is not None:
@@ -111,6 +114,15 @@ class SACMATFActorModel(TFModelV2):
             else:
                 session.run(self.target_div.assign(x))
             self.updated_target_div = True
+
+    def update_policy_id(self, x, session):
+        if not self.updated_policy_id:
+            print(f"Updating policy id: {x}")
+            if session is None:
+                self.policy_id.assign(x)
+            else:
+                session.run(self.policy_id.assign(x))
+            self.updated_policy_id = True
 
     def get_policy_output(self, model_out):
         """Return the action output for the most recent forward pass.

@@ -136,22 +136,20 @@ def postprocess_trajectory(policy,
                            episode=None):
     # uninitialized call
     if "agent_id" not in sample_batch:
-        sample_batch["policy_id"] = np.asarray([0], dtype=np.int32)
-        sample_batch["data_id"] = np.asarray([0], dtype=np.int32)
+        sample_batch["data_id"] = np.array([0], dtype=np.int32)
     else:
         policy_id = int(sample_batch["agent_id"][0][0])
-        sample_batch["policy_id"] = np.asarray([policy_id], dtype=np.int32)
-        sample_batch["data_id"] = np.asarray([policy_id], dtype=np.int32)
-
+        sample_batch["data_id"] = np.array([policy_id], dtype=np.int32)
+        if not policy.actor.updated_policy_id:
+            policy.actor.update_policy_id(policy_id, session=policy.get_session())
     # swap batches w.p 1/2
     if isinstance(other_agent_batches, dict) and other_agent_batches and np.random.binomial(1, 0.5):
         opponent_key = random.choice(list(other_agent_batches.keys()))
         opponent_id = int(opponent_key[0])
         sample_batch = other_agent_batches[opponent_key][1]
-        sample_batch["policy_id"] = np.asarray([policy_id], dtype=np.int32)
-        sample_batch["data_id"] = np.asarray([opponent_id], dtype=np.int32)
+        sample_batch["data_id"] = np.array([opponent_id], dtype=np.int32)
         # update the target divergence of the primary agent to a negative value. This forces beta to go to zero no
-        # matter wht the delta network predicts. In addition we clip beta for safety cautions.
+        # matter wht the delta network predicts. In addition we clip beta for safety cautions. Happens only once
         if policy_id == 0:
             policy.actor.update_target_div(-1, session=policy.get_session())
     return postprocess_nstep_and_prio(policy, sample_batch)
@@ -252,9 +250,9 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             "is_training": policy._get_is_training_placeholder()}, [], None)
 
     # placeholders
-    l_policy = tf.cast(tf.math.less(train_batch["data_id"], train_batch["policy_id"]), tf.float32)
-    leq_policy = tf.cast(tf.math.less_equal(train_batch["data_id"], train_batch["policy_id"]), tf.float32)
-    eq_policy = tf.cast(tf.math.equal(train_batch["data_id"], train_batch["policy_id"]), tf.float32)
+    l_policy = tf.cast(tf.math.less(train_batch["data_id"], policy.actor.policy_id), tf.float32)
+    leq_policy = tf.cast(tf.math.less_equal(train_batch["data_id"], policy.actor.policy_id), tf.float32)
+    eq_policy = tf.cast(tf.math.equal(train_batch["data_id"], policy.actor.policy_id), tf.float32)
     disc_label = tf.cast(OPPONENT_LABEL * l_policy + AGENT_LABEL * eq_policy, tf.int32)
     opp_logp = l_policy * train_batch["action_logp"]
 
