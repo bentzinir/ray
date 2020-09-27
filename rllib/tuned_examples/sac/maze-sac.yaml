@@ -9,10 +9,11 @@ maze_sac:
         framework: tf
         gamma: 0.95
         no_done_at_end: false
-        target_network_update_freq: 50
-        tau: 1.0
+        target_network_update_freq: 1
+        tau: 0.005
         # initial_alpha: 0.5
-        train_batch_size: 64
+        train_batch_size: 256
+        grad_clip: 5
         optimization:
             actor_learning_rate: 0.005
             critic_learning_rate: 0.005
@@ -21,7 +22,7 @@ maze_sac:
         metrics_smoothing_episodes: 20
         Q_model:
             fcnet_activation: relu
-            fcnet_hiddens: [ 256 ]
+            fcnet_hiddens: [ 64, 64]
         policy_model:
             fcnet_activation: relu
-            fcnet_hiddens: [ 256 ]
+            fcnet_hiddens: [ 64, 64]

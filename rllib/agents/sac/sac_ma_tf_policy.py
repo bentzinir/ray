@@ -259,11 +259,15 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # Discrete case.
     if policy.actor.discrete:
         # Get all action probs directly from pi and form their logp.
-        log_pis_t = tf.nn.log_softmax(policy.actor.get_policy_output(actor_t), -1)
-        policy_t = tf.math.exp(log_pis_t)
-        log_pis_tp1 = tf.nn.log_softmax(
-            policy.actor.get_policy_output(actor_tp1), -1)
-        policy_tp1 = tf.math.exp(log_pis_tp1)
+        # log_pis_t = tf.nn.log_softmax(policy.actor.get_policy_output(actor_t), -1)
+        # policy_t = tf.math.exp(log_pis_t)
+        # log_pis_tp1 = tf.nn.log_softmax(
+        #     policy.actor.get_policy_output(actor_tp1), -1)
+        # policy_tp1 = tf.math.exp(log_pis_tp1)
+        policy_t = tf.nn.softmax(policy.actor.get_policy_output(actor_t), -1)
+        log_pis_t = tf.math.log(policy_t + 1e-8)
+        policy_tp1 = tf.nn.softmax(policy.actor.get_policy_output(actor_tp1), -1)
+        log_pis_tp1 = tf.math.log(log_pis_t + 1e-8)
         # Q-values.
         q_t = policy.critic.get_q_values(critic_t)
         # Target Q-values.
@@ -385,13 +389,14 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     eq_count = 1e-8 + tf.reduce_sum(eq_policy)
     if model.discrete:
         min_q_t = tf.stop_gradient(tf.reduce_min((q_t, twin_q_t), axis=0))
-        actor_loss = tf.reduce_mean(
-            tf.reduce_sum(
-                # todo: experiment with the newly derived actor loss
-                # tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - tf.nn.log_softmax(min_q_t, axis=1)),
-                tf.multiply(policy_t, tf.stop_gradient(model.alpha) * log_pis_t - min_q_t),
-                axis=-1))
         entropy_vec = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
+
+        actor_loss = - tf.reduce_mean(
+            tf.stop_gradient(model.alpha) * entropy_vec +
+            # tf.reduce_sum(policy_t * min_q_t, axis=-1)
+            tf.reduce_sum(policy_t * tf.nn.log_softmax(min_q_t, axis=1), axis=-1)
+        )
+
         # entropy = tf.reduce_sum(train_batch["eq_agent"] * entropy_vec) / eq_count
         # todo: debugging the difference between entropy and entropy penalty
         entropy = tf.reduce_mean(entropy_vec)
@@ -499,7 +504,8 @@ def gradients_fn(policy, optimizer, loss):
 
     # Clip if necessary.
     if policy.config["grad_clip"]:
-        clip_func = tf.clip_by_norm
+        def clip_func(x):
+            return tf.clip_by_norm(x, policy.config["grad_clip"])
     else:
         clip_func = tf.identity
 
@@ -632,35 +638,35 @@ class ActorCriticOptimizerMixin:
         if config["framework"] in ["tf2", "tfe"]:
             self.global_step = get_variable(0, tf_name="global_step")
             self._actor_optimizer = tf.keras.optimizers.Adam(
-                learning_rate=config["optimization"]["actor_learning_rate"])
+                learning_rate=config["optimization"]["actor_learning_rate"], epsilon=1e-4)
             self._critic_optimizer = tf.keras.optimizers.Adam(
-                    learning_rate=config["optimization"]["critic_learning_rate"])
+                    learning_rate=config["optimization"]["critic_learning_rate"], epsilon=1e-4)
             if config["twin_q"]:
                 self._twin_critic_optimizer = tf.keras.optimizers.Adam(
-                        learning_rate=config["optimization"]["critic_learning_rate"])
+                        learning_rate=config["optimization"]["critic_learning_rate"], epsilon=1e-4)
             self._alpha_optimizer = tf.keras.optimizers.Adam(
-                learning_rate=config["optimization"]["entropy_learning_rate"])
+                learning_rate=config["optimization"]["entropy_learning_rate"], epsilon=1e-4)
             self._beta_optimizer = tf.keras.optimizers.Adam(
-                learning_rate=config["optimization"]["beta_learning_rate"])
+                learning_rate=config["optimization"]["beta_learning_rate"], epsilon=1e-4)
             if config["divergence_type"] in ["state_action", "state"]:
                 self._delta_optimizer = tf.keras.optimizers.Adam(
-                    learning_rate=config["optimization"]["critic_learning_rate"])
+                    learning_rate=config["optimization"]["critic_learning_rate"], epsilon=1e-4)
         else:
             self.global_step = tf1.train.get_or_create_global_step()
             self._actor_optimizer = tf1.train.AdamOptimizer(
-                learning_rate=config["optimization"]["actor_learning_rate"])
+                learning_rate=config["optimization"]["actor_learning_rate"], epsilon=1e-4)
             self._critic_optimizer = tf1.train.AdamOptimizer(
-                    learning_rate=config["optimization"]["critic_learning_rate"])
+                    learning_rate=config["optimization"]["critic_learning_rate"], epsilon=1e-4)
             if config["twin_q"]:
                 self._twin_critic_optimizer = tf1.train.AdamOptimizer(
-                        learning_rate=config["optimization"]["critic_learning_rate"])
+                        learning_rate=config["optimization"]["critic_learning_rate"], epsilon=1e-4)
             self._alpha_optimizer = tf1.train.AdamOptimizer(
-                learning_rate=config["optimization"]["entropy_learning_rate"])
+                learning_rate=config["optimization"]["entropy_learning_rate"], epsilon=1e-4)
             self._beta_optimizer = tf1.train.AdamOptimizer(
-                learning_rate=config["optimization"]["beta_learning_rate"])
+                learning_rate=config["optimization"]["beta_learning_rate"], epsilon=1e-4)
             if config["divergence_type"] in ["state_action", "state"]:
                 self._delta_optimizer = tf1.train.AdamOptimizer(
-                    learning_rate=config["optimization"]["critic_learning_rate"])
+                    learning_rate=config["optimization"]["critic_learning_rate"], epsilon=1e-4)
 
 
 def setup_early_mixins(policy, obs_space, action_space, config):
