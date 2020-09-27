@@ -461,7 +461,7 @@ def gradients_fn(policy, optimizer, loss):
     if policy.config["framework"] in ["tf2", "tfe"]:
         tape = optimizer.tape
         actor_grads_and_vars = list(zip(tape.gradient(
-            policy.actor_loss, policy.actor.variables()), policy.actor.variables()))
+            policy.actor_loss, policy.actor.trainable_variables()), policy.actor.trainable_variables()))
         critic_grads_and_vars = list(zip(tape.gradient(
             policy.critic_loss[0], policy.critic.variables()), policy.critic.variables()))
         if policy.config["twin_q"]:
@@ -479,7 +479,7 @@ def gradients_fn(policy, optimizer, loss):
     # Tf1.x: Use optimizer.compute_gradients()
     else:
         actor_grads_and_vars = policy._actor_optimizer.compute_gradients(
-            policy.actor_loss, var_list=policy.actor.variables())
+            policy.actor_loss, var_list=policy.actor.trainable_variables())
 
         critic_grads_and_vars = policy._critic_optimizer.compute_gradients(
             policy.critic_loss[0], var_list=policy.critic.variables())
@@ -515,7 +515,7 @@ def gradients_fn(policy, optimizer, loss):
         policy._twin_critic_grads_and_vars = []
     policy._alpha_grads_and_vars = [
         (clip_func(g), v) for (g, v) in alpha_grads_and_vars if g is not None]
-    if hasattr(policy.model, "d_net"):
+    if hasattr(policy, "delta"):
         policy._delta_grads_and_vars = [
             (clip_func(g), v) for (g, v) in delta_grads_and_vars if g is not None]
     else:
@@ -542,7 +542,7 @@ def apply_gradients(policy, optimizer, grads_and_vars):
     else:
         twin_critic_apply_ops = []
 
-    if hasattr(policy.model, "d_net"):
+    if hasattr(policy, "delta"):
         delta_apply_ops = [policy._delta_optimizer.apply_gradients(
             policy._delta_grads_and_vars)]
     else:
