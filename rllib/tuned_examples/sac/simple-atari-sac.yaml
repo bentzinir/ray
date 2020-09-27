@@ -12,7 +12,8 @@ maze_sac:
         target_network_update_freq: 1
         tau: 0.005
         # initial_alpha: 0.5
-        train_batch_size: 32
+        train_batch_size: 1024
+        grad_clip: 5
         optimization:
             actor_learning_rate: 0.00025
             critic_learning_rate: 0.00025
@@ -21,10 +22,10 @@ maze_sac:
         use_state_preprocessor: true
         Q_model:
           fcnet_activation: relu
-          fcnet_hiddens: []
+          fcnet_hiddens: [64, 64]
         policy_model:
           fcnet_activation: relu
-          fcnet_hiddens: []
+          fcnet_hiddens: [64, 64]
         metrics_smoothing_episodes: 20
         buffer_size: 400000
         model:
