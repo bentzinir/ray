@@ -13,6 +13,7 @@ maze_sac:
         tau: 0.005
         # initial_alpha: 0.5
         train_batch_size: 256
+        rollout_fragment_length: 4
         grad_clip: 5
         optimization:
             actor_learning_rate: 0.005

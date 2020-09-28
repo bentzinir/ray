@@ -136,10 +136,12 @@ def postprocess_trajectory(policy,
                            episode=None):
     # uninitialized call
     if "agent_id" not in sample_batch:
-        sample_batch["data_id"] = np.array([0], dtype=np.int32)
+        # sample_batch["data_id"] = np.array([0], dtype=np.int32)
+        sample_batch["data_id"] = np.zeros_like(sample_batch[SampleBatch.REWARDS], dtype=np.int32)
     else:
         policy_id = int(sample_batch["agent_id"][0][0])
-        sample_batch["data_id"] = np.array([policy_id], dtype=np.int32)
+        n = len(sample_batch[SampleBatch.REWARDS])
+        sample_batch["data_id"] = np.array([policy_id]*n, dtype=np.int32)
         if not policy.actor.updated_policy_id:
             policy.actor.update_policy_id(policy_id, session=policy.get_session())
     # swap batches w.p 1/2
@@ -147,7 +149,8 @@ def postprocess_trajectory(policy,
         opponent_key = random.choice(list(other_agent_batches.keys()))
         opponent_id = int(opponent_key[0])
         sample_batch = other_agent_batches[opponent_key][1]
-        sample_batch["data_id"] = np.array([opponent_id], dtype=np.int32)
+        n = len(sample_batch[SampleBatch.REWARDS])
+        sample_batch["data_id"] = np.array([opponent_id]*n, dtype=np.int32)
         # update the target divergence of the primary agent to a negative value. This forces beta to go to zero no
         # matter wht the delta network predicts. In addition we clip beta for safety cautions. Happens only once
         if policy_id == 0:
