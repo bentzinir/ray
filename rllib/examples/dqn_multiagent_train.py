@@ -145,7 +145,6 @@ def get_config(args):
         "buffer_size": args.buffer_size,
         "entropy_scale": args.entropy_scale,
         "target_div": args.target_div,
-        "shuffle_data": args.shuffle_data,
         # "optimization": {
         #     "entropy_learning_rate": args.entropy_learning_rate,
         #     "beta_learning_rate": args.beta_learning_rate,
