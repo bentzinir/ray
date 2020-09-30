@@ -444,6 +444,9 @@ def _ensemble_postprocessing(policy, batch, other_batches):
         # matter wht the delta network predicts. In addition we clip beta for safety cautions. Happens only once
         if policy_id == 0:
             policy.model.update_beta(-1e20, session=policy.get_session())
+    # nirbz: we do not know the affect of n-step DQN on data sharing between agents.
+    # for the meantime, assert n_step == 1.
+    assert policy.config["n_step"] == 1
     return batch
 
 
