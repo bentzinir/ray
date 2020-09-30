@@ -14,7 +14,7 @@ maze_sac:
         # initial_alpha: 0.5
         train_batch_size: 256
 #        training_intensity: [1, 10]
-        rollout_fragment_length: 1
+        rollout_fragment_length: 4
         grad_clip: 5
         optimization:
             actor_learning_rate: 0.00025
