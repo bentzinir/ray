@@ -8,7 +8,10 @@ import numpy as np
 
 
 def get_config(args):
-    single_env = gym.make(args.env)
+    if isinstance(args.env, str):
+        single_env = gym.make(args.env)
+    else:
+        single_env = args.env({"spatial": args.spatial})
     policies = {
         "policy_{}".format(i): (None, single_env.observation_space, single_env.action_space, {})
         for i in range(args.ensemble_size)
@@ -31,6 +34,8 @@ def get_config(args):
             "policies": policies,
             "policy_mapping_fn": (lambda x: f"policy_{x[0]}"),
         },
+        'target_entropy': args.target_entropy,
+        'initial_alpha': args.initial_alpha,
     }
 
 

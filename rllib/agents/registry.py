@@ -65,6 +65,11 @@ def _import_dqn():
     return dqn.DQNTrainer
 
 
+def _import_dqnma():
+    from ray.rllib.agents import dqn
+    return dqn.DQNMATrainer
+
+
 def _import_simple_q():
     from ray.rllib.agents import dqn
     return dqn.SimpleQTrainer
@@ -115,6 +120,7 @@ ALGORITHMS = {
     "ES": _import_es,
     "ARS": _import_ars,
     "DQN": _import_dqn,
+    "DQNMA": _import_dqnma,
     "SimpleQ": _import_simple_q,
     "APEX": _import_apex,
     "A3C": _import_a3c,

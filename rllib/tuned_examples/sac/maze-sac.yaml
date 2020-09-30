@@ -12,9 +12,9 @@ maze_sac:
         target_network_update_freq: 1
         tau: 0.005
         # initial_alpha: 0.5
-        train_batch_size: 256
-        rollout_fragment_length: 4
-        grad_clip: 5
+        train_batch_size: 32
+        rollout_fragment_length: 1
+        grad_clip: None
         optimization:
             actor_learning_rate: 0.005
             critic_learning_rate: 0.005

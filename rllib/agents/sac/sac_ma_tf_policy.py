@@ -258,6 +258,9 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     eq_policy = tf.cast(tf.math.equal(train_batch["data_id"], policy.actor.policy_id), tf.float32)
     disc_label = tf.cast(OPPONENT_LABEL * l_policy + AGENT_LABEL * eq_policy, tf.int32)
     opp_logp = l_policy * train_batch["action_logp"]
+    l_count = 1e-8 + tf.reduce_sum(l_policy)
+    leq_count = 1e-8 + tf.reduce_sum(leq_policy)
+    eq_count = 1e-8 + tf.reduce_sum(eq_policy)
 
     # Discrete case.
     if policy.actor.discrete:
@@ -280,7 +283,7 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
             twin_q_tp1 = policy.target_twin_critic.get_q_values(target_twin_critic_tp1)
             q_tp1 = tf.reduce_min((q_tp1, twin_q_tp1), axis=0)
         # todo: disabled critic entropy regularization
-        # q_tp1 -= model.alpha * log_pis_tp1
+        # q_tp1 -= policy.actor.alpha * log_pis_tp1
 
         # Apply ensemble diversity regularization
         if policy.config["divergence_type"] == 'action':
@@ -312,47 +315,65 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
 
     # Continuous actions case.
     else:
-        assert False, 'not re-implemented yet'
         # Sample single actions from distribution.
         action_dist_class = get_dist_class(policy.config, policy.action_space)
         action_dist_t = action_dist_class(
-            model.get_policy_output(model_out_t), policy.model)
+            policy.actor.get_policy_output(actor_t), policy.actor)
         policy_t = action_dist_t.sample() if not deterministic else \
             action_dist_t.deterministic_sample()
         log_pis_t = tf.expand_dims(action_dist_t.logp(policy_t), -1)
         action_dist_tp1 = action_dist_class(
-            model.get_policy_output(model_out_tp1), policy.model)
+            policy.actor.get_policy_output(actor_tp1), policy.actor)
         policy_tp1 = action_dist_tp1.sample() if not deterministic else \
             action_dist_tp1.deterministic_sample()
         log_pis_tp1 = tf.expand_dims(action_dist_tp1.logp(policy_tp1), -1)
 
         # Q-values for the actually selected actions.
-        q_t = model.get_q_values(model_out_t, train_batch[SampleBatch.ACTIONS])
+        q_t = policy.critic.get_q_values(critic_t, train_batch[SampleBatch.ACTIONS])
         if policy.config["twin_q"]:
-            twin_q_t = model.get_twin_q_values(
-                model_out_t, train_batch[SampleBatch.ACTIONS])
+            twin_q_t = policy.twin_critic.get_q_values(
+                critic_t, train_batch[SampleBatch.ACTIONS])
 
         # Q-values for current policy in given current state.
-        q_t_det_policy = model.get_q_values(model_out_t, policy_t)
+        q_t_det_policy = policy.critic.get_q_values(critic_t, policy_t)
         if policy.config["twin_q"]:
-            twin_q_t_det_policy = model.get_twin_q_values(
-                model_out_t, policy_t)
+            twin_q_t_det_policy = policy.twin_critic.get_q_values(
+                twin_critic_t, policy_t)
             q_t_det_policy = tf.reduce_min(
                 (q_t_det_policy, twin_q_t_det_policy), axis=0)
 
         # target q network evaluation
-        q_tp1 = policy.target_model.get_q_values(target_model_out_tp1,
+        q_tp1 = policy.target_critic.get_q_values(target_critic_tp1,
                                                  policy_tp1)
         if policy.config["twin_q"]:
-            twin_q_tp1 = policy.target_model.get_twin_q_values(
-                target_model_out_tp1, policy_tp1)
+            twin_q_tp1 = policy.target_twin_critic.get_q_values(
+                target_twin_critic_tp1, policy_tp1)
             # Take min over both twin-NNs.
             q_tp1 = tf.reduce_min((q_tp1, twin_q_tp1), axis=0)
 
         q_t_selected = tf.squeeze(q_t, axis=len(q_t.shape) - 1)
         if policy.config["twin_q"]:
             twin_q_t_selected = tf.squeeze(twin_q_t, axis=len(q_t.shape) - 1)
-        q_tp1 -= model.alpha * log_pis_tp1
+        # todo: disabled critic entropy regularization
+        # q_tp1 -= policy.actor.alpha * log_pis_tp1
+
+        # Apply ensemble diversity regularization
+        if policy.config["divergence_type"] == 'action':
+            # todo: clarify possible bug. penalty based on s_t instead of s_tp1
+            logd_tp1 = tf.expand_dims(opp_logp, axis=1)
+            logd_tp1 = tf.tile(logd_tp1, multiples=[1, q_t.shape.as_list()[-1]])
+        elif policy.config["divergence_type"] in ['state', 'state_action']:
+            d_tp1 = policy.delta.get_d_values(delta_tp1, actions=None)
+            logd_tp1 = tf.nn.log_softmax(d_tp1, axis=1)
+            # we choose positive agent-based regularization in oppose to negative opponent-based pne
+            logd_tp1 = -tf.slice(logd_tp1, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
+            # logd_tp1 = tf.slice(logd_tp1, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
+            if policy.config["divergence_type"] == 'state':
+                logd_tp1 = tf.tile(logd_tp1, multiples=[1, 1, q_t.shape.as_list()[-1]])
+            logd_tp1 = tf.squeeze(logd_tp1, axis=1)
+        else:
+            raise ValueError
+        q_tp1 -= policy.actor.beta * logd_tp1
 
         q_tp1_best = tf.squeeze(input=q_tp1, axis=len(q_tp1.shape) - 1)
         q_tp1_best_masked = (1.0 - tf.cast(train_batch[SampleBatch.DONES],
@@ -387,29 +408,30 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
     # Note: In the papers, alpha is used directly, here we take the log.
     # Discrete case: Multiply the action probs as weights with the original
     # loss terms (no expectations needed).
-    l_count = 1e-8 + tf.reduce_sum(l_policy)
-    leq_count = 1e-8 + tf.reduce_sum(leq_policy)
-    eq_count = 1e-8 + tf.reduce_sum(eq_policy)
+
     if model.discrete:
         min_q_t = tf.stop_gradient(tf.reduce_min((q_t, twin_q_t), axis=0))
         entropy_vec = -tf.reduce_sum(policy_t * log_pis_t, axis=-1)
 
-        actor_loss = - tf.reduce_mean(
-            tf.stop_gradient(model.alpha) * entropy_vec +
-            # tf.reduce_sum(policy_t * min_q_t, axis=-1)
-            tf.reduce_sum(policy_t * tf.nn.log_softmax(min_q_t, axis=1), axis=-1)
-        )
+        actor_loss = tf.reduce_mean(
+            tf.reduce_sum(
+                tf.multiply(
+                    # NOTE: No stop_grad around policy output here
+                    # (compare with q_t_det_policy for continuous case).
+                    policy_t,
+                    policy.actor.alpha * log_pis_t - tf.stop_gradient(min_q_t)),
+                axis=-1))
 
         # entropy = tf.reduce_sum(train_batch["eq_agent"] * entropy_vec) / eq_count
         # todo: debugging the difference between entropy and entropy penalty
         entropy = tf.reduce_mean(entropy_vec)
 
         # take log alpha instead of alpha
-        alpha_loss = - model.log_alpha * tf.stop_gradient(model.target_entropy - entropy)
+        alpha_loss = - policy.actor.log_alpha * tf.stop_gradient(policy.actor.target_entropy - entropy)
     else:
-        alpha_loss = -tf.reduce_mean(model.log_alpha * tf.stop_gradient(log_pis_t + model.target_entropy))
-        actor_loss = tf.reduce_mean(model.alpha * log_pis_t - q_t_det_policy)
-
+        alpha_loss = -tf.reduce_mean(policy.actor.log_alpha * tf.stop_gradient(log_pis_t + policy.actor.target_entropy))
+        actor_loss = tf.reduce_mean(policy.actor.alpha * log_pis_t - q_t_det_policy)
+        entropy = - tf.reduce_mean(log_pis_t)
     # Train diversity model
     if policy.config["divergence_type"] == 'action':
         delta_loss = 0  # non-parametric diversity regularization mode
@@ -436,8 +458,8 @@ def sac_actor_critic_loss(policy, model, _, train_batch):
         raise ValueError
 
     # Auto adjust divergence coefficient
-    beta_backup = tf.stop_gradient(model.target_div - div_rate)
-    beta_loss = - tf.reduce_mean(model.log_beta * beta_backup)
+    beta_backup = tf.stop_gradient(policy.actor.target_div - div_rate)
+    beta_loss = - tf.reduce_mean(policy.actor.log_beta * beta_backup)
 
     # save for stats function
     policy.policy_t = policy_t
