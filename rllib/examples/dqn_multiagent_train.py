@@ -15,6 +15,7 @@ from ray.rllib.examples.env.maze_env import MazeEnv
 import collections.abc
 import numpy as np
 from ray.rllib.models.tf.visionnet_no_v import VisionNetworkNoV
+from ray.rllib.models.tf.visionnet import VisionNetwork
 
 
 def get_parser():
@@ -155,7 +156,7 @@ def get_config(args):
         # "learning_starts": args.learning_starts,
         "model": {
             "custom_model": None if isinstance(obs_space, gym.spaces.Discrete) or len(obs_space.shape) <= 2
-                                        else VisionNetworkNoV
+                                        else VisionNetwork
         }
     }
     config = update(config, override_config)
