@@ -6,6 +6,7 @@ from ray.rllib.agents.dqn.simple_q import SimpleQTrainer, \
     DEFAULT_CONFIG as SIMPLE_Q_DEFAULT_CONFIG
 from ray.rllib.agents.dqn.simple_q_tf_policy import SimpleQTFPolicy
 from ray.rllib.agents.dqn.simple_q_torch_policy import SimpleQTorchPolicy
+from ray.rllib.agents.dqn.dqnma import DQNMATrainer
 
 __all__ = [
     "ApexTrainer",
@@ -17,4 +18,5 @@ __all__ = [
     "SimpleQTFPolicy",
     "SimpleQTorchPolicy",
     "SimpleQTrainer",
+    "DQNMATrainer"
 ]

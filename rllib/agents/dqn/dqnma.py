@@ -2,7 +2,7 @@ import logging
 
 from ray.rllib.agents.trainer import with_common_config
 from ray.rllib.agents.trainer_template import build_trainer
-from ray.rllib.agents.dqn.dqn_tf_policy import DQNTFPolicy
+from ray.rllib.agents.dqn.dqnma_tf_policy import DQNMATFPolicy
 from ray.rllib.agents.dqn.simple_q_tf_policy import SimpleQTFPolicy
 from ray.rllib.policy.policy import LEARNER_STATS_KEY
 from ray.rllib.utils.deprecation import deprecation_warning, DEPRECATED_VALUE
@@ -132,7 +132,7 @@ DEFAULT_CONFIG = with_common_config({
     "soft_q": DEPRECATED_VALUE,
     "parameter_noise": DEPRECATED_VALUE,
     "grad_norm_clipping": DEPRECATED_VALUE,
-    #nirbz: ensemble add-ons
+    #nirbz: add-ons
     "alpha": None,
     "beta": None,
     "entropy_scale": None,
@@ -323,7 +323,7 @@ def get_policy_class(config):
         from ray.rllib.agents.dqn.dqn_torch_policy import DQNTorchPolicy
         return DQNTorchPolicy
     else:
-        return DQNTFPolicy
+        return DQNMATFPolicy
 
 
 def get_simple_policy_class(config):
@@ -343,8 +343,6 @@ GenericOffPolicyTrainer = build_trainer(
     validate_config=validate_config,
     execution_plan=execution_plan)
 
-DQNTrainer = GenericOffPolicyTrainer.with_updates(
-    name="DQN", default_policy=DQNTFPolicy, default_config=DEFAULT_CONFIG)
+DQNMATrainer = GenericOffPolicyTrainer.with_updates(
+    name="DQNMA", default_policy=DQNMATFPolicy, default_config=DEFAULT_CONFIG)
 
-SimpleQTrainer = DQNTrainer.with_updates(
-    default_policy=SimpleQTFPolicy, get_policy_class=get_simple_policy_class)

@@ -49,11 +49,11 @@ class SACMATFActorModel(TFModelV2):
         super(SACMATFActorModel, self).__init__(obs_space, action_space, num_outputs,
                                          model_config, name)
         if isinstance(action_space, Discrete):
-            action_outs = action_space.n
             self.discrete = True
+            action_outs = action_space.n
         else:
-            action_outs = 2 * action_space.n
             self.discrete = False
+            action_outs = 2 * np.product(action_space.shape)
 
         self.model_out = tf.keras.layers.Input(
             shape=(self.num_outputs, ), name="model_out")
@@ -67,6 +67,8 @@ class SACMATFActorModel(TFModelV2):
             tf.keras.layers.Dense(
                 units=action_outs, activation=None, name="action_out")
         ])
+        self.shift_and_log_scale_diag = self.action_model(self.model_out)
+
         # build the model and register variables
         self.action_model.build(self.model_out.shape)
         self.register_variables(self.action_model.variables)
@@ -74,6 +76,7 @@ class SACMATFActorModel(TFModelV2):
         self.policy_id = tf.Variable(-1, dtype=tf.int32, name="policy_id", trainable=False)
         self.register_variables([self.policy_id])
         self.updated_policy_id = False
+
         ######################
         # ALPHA
         if alpha is not None:
@@ -94,6 +97,7 @@ class SACMATFActorModel(TFModelV2):
                 target_entropy = -np.prod(action_space.shape)
         self.target_entropy = entropy_scale * target_entropy
         self.register_variables([self.log_alpha])
+
         ######################
         # BETA
         if beta is not None:
