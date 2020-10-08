@@ -434,16 +434,16 @@ def _ensemble_postprocessing(policy, batch, other_batches):
         batch["data_id"] = np.array([policy_id]*batch.count, dtype=np.int32)
         if not policy.model.updated_policy_id:
             policy.model.update_policy_id(policy_id, session=policy.get_session())
+        # update the target divergence of the primary agent to a negative value. This forces beta to go to zero no
+        # matter wht the delta network predicts. In addition we clip beta for safety cautions. Happens only once
+        if policy_id == 0:
+            policy.model.update_beta(-1e10, session=policy.get_session())
     # swap batches w.p 1/2
     if isinstance(other_batches, dict) and other_batches and np.random.binomial(1, 0.5):
         opponent_key = random.choice(list(other_batches.keys()))
         opponent_id = int(opponent_key[0])
         batch = other_batches[opponent_key][1]
         batch["data_id"] = np.array([opponent_id]*batch.count, dtype=np.int32)
-        # update the target divergence of the primary agent to a negative value. This forces beta to go to zero no
-        # matter wht the delta network predicts. In addition we clip beta for safety cautions. Happens only once
-        if policy_id == 0:
-            policy.model.update_beta(-1e20, session=policy.get_session())
     # nirbz: we do not know the affect of n-step DQN on data sharing between agents.
     # for the meantime, assert n_step == 1.
     assert policy.config["n_step"] == 1
