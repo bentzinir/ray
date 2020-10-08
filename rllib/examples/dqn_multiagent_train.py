@@ -44,7 +44,7 @@ def get_parser():
     parser.add_argument("--local_dir", type=str, default="none")
     parser.add_argument("--checkpoint_dir", type=str, default=None)
     parser.add_argument("--checkpoint_freq", type=int, default=0)
-    parser.add_argument("--buffer_size", type=int, default=1000000)
+    parser.add_argument("--buffer_size", type=int, default=50000)
     parser.add_argument("--entropy_scale", type=float, default=1.)
     parser.add_argument("--target_div", type=float, default=None)
     parser.add_argument("--entropy_learning_rate", type=float, default=3e-4)
