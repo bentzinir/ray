@@ -266,7 +266,6 @@ def build_q_losses(policy, model, _, train_batch):
         # we choose positive agent-based regularization in oppose to negative opponent-based pne
         log_delta = -tf.slice(log_delta, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
         # log_delta = tf.slice(log_delta, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
-        log_delta = tf.squeeze(log_delta)
     elif policy.config["divergence_type"] == 'state_action':
         one_hot_3d = tf.tile(tf.expand_dims(one_hot_selection, axis=1), multiples=[1, 2, 1])
         delta_selected = tf.reduce_sum(one_hot_3d * delta_t, axis=2, keepdims=True)
@@ -275,7 +274,7 @@ def build_q_losses(policy, model, _, train_batch):
     else:
         raise ValueError
 
-    q_tp1_best -= model.beta * log_delta
+    q_tp1_best -= model.beta * tf.squeeze(log_delta)
 
     policy.q_loss = QLoss(
         q_t_selected, q_logits_t_selected, q_tp1_best, q_dist_tp1_best,
