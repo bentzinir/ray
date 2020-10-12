@@ -182,7 +182,7 @@ class DistributionalQDeltaTFModel(TFModelV2):
             initial_beta = beta
             print(f":::setting a constant beta value! ({beta}):::")
         self.log_beta = tf.Variable(np.log(initial_beta), dtype=tf.float32, name="log_beta",
-                                    constraint=lambda x: tf.clip_by_value(x, np.log(1e-10), np.log(100)))
+                                    constraint=lambda x: tf.clip_by_value(x, np.log(1e-20), np.log(100)))
         self.beta = tf.exp(self.log_beta)
         self.register_variables([self.log_beta])
         self.updated_beta = False

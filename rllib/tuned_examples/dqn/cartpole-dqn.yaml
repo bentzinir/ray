@@ -7,8 +7,14 @@ cartpole-dqn:
     config:
         # Works for both torch and tf.
         framework: tf
-        n_step: 1
+        n_step: 3
         gamma: 0.95
         learning_starts: 10000
         rollout_fragment_length: 3
         buffer_size: 50000
+        prioritized_replay: true
+        exploration_config:
+            type: EpsilonGreedy
+            initial_epsilon: 0.02
+            final_epsilon: 0.02
+            epsilon_timesteps: 10000
