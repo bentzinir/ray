@@ -14,7 +14,6 @@ import yaml
 from ray.rllib.examples.env.maze_env import MazeEnv
 import collections.abc
 import numpy as np
-from ray.rllib.models.tf.visionnet_no_v import VisionNetworkNoV
 from ray.rllib.models.tf.visionnet import VisionNetwork
 
 
