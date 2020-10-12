@@ -38,9 +38,7 @@ def get_parser():
     parser.add_argument("--target_entropy", type=float, default=None)
     parser.add_argument("--ensemble_grid_search", action="store_true")
     parser.add_argument("--local_mode", action="store_true")
-    parser.add_argument("--alpha", type=float, default=None)
     parser.add_argument("--beta", type=float, default=None)
-    parser.add_argument("--alpha_grid_search", action="store_true")
     parser.add_argument("--local_dir", type=str, default="none")
     parser.add_argument("--checkpoint_dir", type=str, default=None)
     parser.add_argument("--checkpoint_freq", type=int, default=0)
@@ -53,7 +51,6 @@ def get_parser():
     parser.add_argument("--divergence_type", type=str, default="none")
     parser.add_argument("--vis_sleep", type=float, default=0.0)
     parser.add_argument("--yaml_config", type=str, default="none")
-    parser.add_argument("--initial_alpha", type=float, default=1.0)
     parser.add_argument("--initial_beta", type=float, default=1.0)
     parser.add_argument("--object_store_memory", type=int, default=1000000000)
     return parser
@@ -132,26 +129,18 @@ def get_config(args):
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
         'framework': args.framework,
-        # 'target_entropy': args.target_entropy,
         "callbacks": callback_builder(),
         "multiagent": {
             "policies": policies,
             "policy_mapping_fn": (lambda x: f"policy_{x[0]}"),
         },
-        "alpha": args.alpha,
         "beta": args.beta,
-        # "initial_alpha": args.initial_alpha,
         "initial_beta": args.initial_beta,
         'gamma': args.gamma,
         "buffer_size": args.buffer_size,
         "entropy_scale": args.entropy_scale,
         "target_div": args.target_div,
-        # "optimization": {
-        #     "entropy_learning_rate": args.entropy_learning_rate,
-        #     "beta_learning_rate": args.beta_learning_rate,
-        # },
         "divergence_type": args.divergence_type,
-        "prioritized_replay": False,  # todo: consider setting back to True
         "compress_observations": np.issubdtype(single_env.observation_space.dtype, np.integer),
         # "learning_starts": args.learning_starts,
         "model": {

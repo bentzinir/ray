@@ -329,7 +329,23 @@ def build_q_losses(policy, model, _, train_batch):
     policy.div_rate = div_rate
     policy.delta_penalty = log_delta
 
-    return policy.q_loss.loss + delta_loss + beta_loss
+    return policy.q_loss.loss  # + delta_loss + beta_loss
+
+
+class OptimizerMixins:
+    def __init__(self, config):
+        if config["framework"] in ["tf2", "tfe"]:
+            self._beta_optimizer = tf.keras.optimizers.Adam(
+                learning_rate=config["entropy_lr"],
+                epsilon=config["adam_epsilon"])
+            assert False, "unimplemented"
+        else:
+            self._beta_optimizer = tf1.train.AdamOptimizer(
+                learning_rate=config["entropy_lr"],
+                epsilon=config["adam_epsilon"])
+            self._delta_optimizer = tf1.train.AdamOptimizer(
+                learning_rate=self.cur_lr,
+                epsilon=config["adam_epsilon"])
 
 
 def adam_optimizer(policy, config):
@@ -345,14 +361,20 @@ def clip_gradients(policy, optimizer, loss):
     if policy.config["grad_clip"] is not None:
         grads_and_vars = minimize_and_clip(
             optimizer,
-            loss,
+            policy.q_loss.loss,
             var_list=policy.q_func_vars,
             clip_val=policy.config["grad_clip"])
     else:
         grads_and_vars = optimizer.compute_gradients(
             loss, var_list=policy.q_func_vars)
+    beta_grads_and_vars = policy._beta_optimizer.compute_gradients(
+        policy.beta_loss, var_list=[policy.model.log_beta])
+    delta_grads_and_vars = policy._delta_optimizer.compute_gradients(
+        policy.delta_loss, var_list=policy.q_func_vars)
     grads_and_vars = [(g, v) for (g, v) in grads_and_vars if g is not None]
-    return grads_and_vars
+    beta_grads_and_vars = [(g, v) for (g, v) in beta_grads_and_vars if g is not None]
+    delta_grads_and_vars = [(g, v) for (g, v) in delta_grads_and_vars if g is not None]
+    return grads_and_vars + beta_grads_and_vars + delta_grads_and_vars
 
 
 def build_q_stats(policy, batch):
@@ -371,6 +393,7 @@ def build_q_stats(policy, batch):
 
 def setup_early_mixins(policy, obs_space, action_space, config):
     LearningRateSchedule.__init__(policy, config["lr"], config["lr_schedule"])
+    OptimizerMixins.__init__(policy, config)
 
 
 def setup_mid_mixins(policy, obs_space, action_space, config):
@@ -427,9 +450,11 @@ def compute_q_values(policy, model, obs, explore):
 def _ensemble_postprocessing(policy, batch, other_batches):
     # uninitialized call
     if "agent_id" not in batch:
-        # sample_batch["data_id"] = np.array([0], dtype=np.int32)
         batch["data_id"] = np.zeros_like(batch[SampleBatch.REWARDS], dtype=np.int32)
     else:
+        assert len(set(batch["agent_id"])) == 1
+        # agent_id = batch["agent_id"][0]
+        # print(f"(dqnma) agent id: {agent_id}, t: {batch['t']}, dones: {batch['dones']}")
         policy_id = int(batch["agent_id"][0][0])
         batch["data_id"] = np.array([policy_id]*batch.count, dtype=np.int32)
         if not policy.model.updated_policy_id:
@@ -437,16 +462,14 @@ def _ensemble_postprocessing(policy, batch, other_batches):
         # update the target divergence of the primary agent to a negative value. This forces beta to go to zero no
         # matter wht the delta network predicts. In addition we clip beta for safety cautions. Happens only once
         if policy_id == 0:
-            policy.model.update_beta(-1e10, session=policy.get_session())
+            policy.model.update_beta(-np.inf, session=policy.get_session())
     # swap batches w.p 1/2
     if isinstance(other_batches, dict) and other_batches and np.random.binomial(1, 0.5):
         opponent_key = random.choice(list(other_batches.keys()))
         opponent_id = int(opponent_key[0])
-        batch = other_batches[opponent_key][1]
-        batch["data_id"] = np.array([opponent_id]*batch.count, dtype=np.int32)
-    # nirbz: we do not know the affect of n-step DQN on data sharing between agents.
-    # for the meantime, assert n_step == 1.
-    assert policy.config["n_step"] == 1
+        obatch = other_batches[opponent_key][1]
+        batch = obatch.copy()
+        batch["data_id"] = np.array([opponent_id] * batch.count, dtype=np.int32)
     return batch
 
 

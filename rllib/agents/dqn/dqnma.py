@@ -94,6 +94,7 @@ DEFAULT_CONFIG = with_common_config({
     # === Optimization ===
     # Learning rate for adam optimizer
     "lr": 5e-4,
+    "entropy_lr": 5e-4,
     # Learning rate schedule
     "lr_schedule": None,
     # Adam epsilon hyper parameter
@@ -133,7 +134,6 @@ DEFAULT_CONFIG = with_common_config({
     "parameter_noise": DEPRECATED_VALUE,
     "grad_norm_clipping": DEPRECATED_VALUE,
     #nirbz: add-ons
-    "alpha": None,
     "beta": None,
     "entropy_scale": None,
     "divergence_type": None,
