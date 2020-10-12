@@ -12,7 +12,7 @@ cartpole-dqn:
         learning_starts: 10000
         rollout_fragment_length: 3
         buffer_size: 50000
-        prioritized_replay: true
+        prioritized_replay: false
         exploration_config:
             type: EpsilonGreedy
             initial_epsilon: 0.02
