@@ -365,7 +365,7 @@ def clip_gradients(policy, optimizer, loss):
             clip_val=policy.config["grad_clip"])
     else:
         grads_and_vars = optimizer.compute_gradients(
-            loss, var_list=policy.q_func_vars)
+            policy.q_loss.loss, var_list=policy.q_func_vars)
     beta_grads_and_vars = policy._beta_optimizer.compute_gradients(
         policy.beta_loss, var_list=[policy.model.log_beta])
     delta_grads_and_vars = policy._delta_optimizer.compute_gradients(
