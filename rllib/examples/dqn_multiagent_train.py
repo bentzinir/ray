@@ -44,7 +44,7 @@ def get_parser():
     parser.add_argument("--buffer_size", type=int, default=50000)
     parser.add_argument("--entropy_scale", type=float, default=1.)
     parser.add_argument("--target_div", type=float, default=None)
-    parser.add_argument("--entropy_learning_rate", type=float, default=3e-4)
+    parser.add_argument("--entropy_lr", type=float, default=5e-4)
     parser.add_argument("--beta_learning_rate", type=float, default=3e-4)
     parser.add_argument("--shuffle_data", action="store_true")
     parser.add_argument("--divergence_type", type=str, default="none")
@@ -138,6 +138,7 @@ def get_config(args):
         'gamma': args.gamma,
         "buffer_size": args.buffer_size,
         "entropy_scale": args.entropy_scale,
+        "entropy_lr": args.entropy_lr,
         "target_div": args.target_div,
         "divergence_type": args.divergence_type,
         "compress_observations": np.issubdtype(single_env.observation_space.dtype, np.integer),
