@@ -16,7 +16,7 @@ atari-basic-dqn:
         num_atoms: 1
         noisy: false
         prioritized_replay: false
-        n_step: 1
+        n_step: 3
         target_network_update_freq: 8000
         lr: .0000625
         adam_epsilon: .00015
@@ -27,6 +27,7 @@ atari-basic-dqn:
         train_batch_size: 32
         exploration_config:
           epsilon_timesteps: 200000
+          initial_epsilon: 0.01
           final_epsilon: 0.01
         prioritized_replay_alpha: 0.5
         final_prioritized_replay_beta: 1.0
