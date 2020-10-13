@@ -228,6 +228,15 @@ def build_q_losses(policy, model, _, train_batch):
         train_batch[SampleBatch.NEXT_OBS],
         explore=False)
 
+    # placeholders
+    l_policy = tf.cast(tf.math.less(train_batch["data_id"], model.policy_id), tf.float32)
+    leq_policy = tf.cast(tf.math.less_equal(train_batch["data_id"], model.policy_id), tf.float32)
+    eq_policy = tf.cast(tf.math.equal(train_batch["data_id"], model.policy_id), tf.float32)
+    disc_label = tf.cast(OPPONENT_LABEL * l_policy + AGENT_LABEL * eq_policy, tf.int32)
+    opp_action_dist = tf.expand_dims(l_policy, 1) * train_batch["action_dist_inputs"]
+    l_count = 1e-8 + tf.reduce_sum(l_policy)
+    leq_count = 1e-8 + tf.reduce_sum(leq_policy)
+
     # q scores for actions which we know were selected in the given state.
     one_hot_selection = tf.one_hot(
         tf.cast(train_batch[SampleBatch.ACTIONS], tf.int32),
@@ -258,9 +267,9 @@ def build_q_losses(policy, model, _, train_batch):
 
     # Apply ensemble diversity regularization
     if policy.config["divergence_type"] == 'action':
-        assert False, "understand how to calculate action logp"
-        log_delta = tf.expand_dims(opp_logp, axis=1)
-        log_delta = tf.tile(log_delta, multiples=[1, q_t.shape.as_list()[-1]])
+        # assert False, "understand how to calculate action logp"
+        delta_t = tf.nn.log_softmax(opp_action_dist, axis=1)
+        log_delta = tf.reduce_sum(one_hot_selection * delta_t, axis=1)
     elif policy.config["divergence_type"] == 'state':
         log_delta = tf.nn.log_softmax(delta_tp1, axis=1)
         # we choose positive agent-based regularization in oppose to negative opponent-based pne
@@ -284,17 +293,10 @@ def build_q_losses(policy, model, _, train_batch):
         config["v_min"], config["v_max"])
 
     # Train diversity model
-    l_policy = tf.cast(tf.math.less(train_batch["data_id"], model.policy_id), tf.float32)
-    leq_policy = tf.cast(tf.math.less_equal(train_batch["data_id"], model.policy_id), tf.float32)
-    eq_policy = tf.cast(tf.math.equal(train_batch["data_id"], model.policy_id), tf.float32)
-    disc_label = tf.cast(OPPONENT_LABEL * l_policy + AGENT_LABEL * eq_policy, tf.int32)
-    l_count = 1e-8 + tf.reduce_sum(l_policy)
-    leq_count = 1e-8 + tf.reduce_sum(leq_policy)
-
     if policy.config["divergence_type"] == 'action':
         delta_loss = 0  # non-parametric diversity regularization mode
         divergence_vec = tf.math.not_equal(
-            tf.argmax(policy_t, axis=1, output_type=tf.int32),
+            tf.argmax(q_t, axis=1, output_type=tf.int32),
             tf.argmax(train_batch["action_dist_inputs"], axis=1, output_type=tf.int32))
         divergence_vec = tf.cast(divergence_vec, tf.float32)
         divergence_vec = divergence_vec * l_policy
@@ -337,7 +339,9 @@ class OptimizerMixins:
             self._beta_optimizer = tf.keras.optimizers.Adam(
                 learning_rate=config["entropy_lr"],
                 epsilon=config["adam_epsilon"])
-            assert False, "unimplemented"
+            self._delta_optimizer = tf.keras.optimizers.Adam(
+                learning_rate=self.cur_lr,
+                epsilon=config["adam_epsilon"])
         else:
             self._beta_optimizer = tf1.train.AdamOptimizer(
                 learning_rate=config["entropy_lr"],
@@ -357,23 +361,28 @@ def adam_optimizer(policy, config):
 
 
 def clip_gradients(policy, optimizer, loss):
+    if policy.config["framework"] in ["tf2", "tfe"]:
+        print(f"eager mode gradients are not implemented !!!")
     if policy.config["grad_clip"] is not None:
-        grads_and_vars = minimize_and_clip(
+        q_grads_and_vars = minimize_and_clip(
             optimizer,
             policy.q_loss.loss,
             var_list=policy.q_func_vars,
             clip_val=policy.config["grad_clip"])
     else:
-        grads_and_vars = optimizer.compute_gradients(
+        q_grads_and_vars = optimizer.compute_gradients(
             policy.q_loss.loss, var_list=policy.q_func_vars)
     beta_grads_and_vars = policy._beta_optimizer.compute_gradients(
         policy.beta_loss, var_list=[policy.model.log_beta])
-    delta_grads_and_vars = policy._delta_optimizer.compute_gradients(
-        policy.delta_loss, var_list=policy.q_func_vars)
-    grads_and_vars = [(g, v) for (g, v) in grads_and_vars if g is not None]
+    q_grads_and_vars = [(g, v) for (g, v) in q_grads_and_vars if g is not None]
     beta_grads_and_vars = [(g, v) for (g, v) in beta_grads_and_vars if g is not None]
-    delta_grads_and_vars = [(g, v) for (g, v) in delta_grads_and_vars if g is not None]
-    return grads_and_vars + beta_grads_and_vars + delta_grads_and_vars
+    grads_and_vars = q_grads_and_vars + beta_grads_and_vars
+    if hasattr(policy.model, "delta"):
+        delta_grads_and_vars = policy._delta_optimizer.compute_gradients(
+            policy.delta_loss, var_list=policy.q_func_vars)
+        delta_grads_and_vars = [(g, v) for (g, v) in delta_grads_and_vars if g is not None]
+        grads_and_vars += delta_grads_and_vars
+    return grads_and_vars
 
 
 def build_q_stats(policy, batch):
@@ -448,6 +457,7 @@ def compute_q_values(policy, model, obs, explore):
 
 def _ensemble_postprocessing(policy, batch, other_batches):
     # uninitialized call
+    assert "data_id" not in batch, "contaminated batch"
     if "agent_id" not in batch:
         batch["data_id"] = np.zeros_like(batch[SampleBatch.REWARDS], dtype=np.int32)
     else:
@@ -467,6 +477,7 @@ def _ensemble_postprocessing(policy, batch, other_batches):
         opponent_key = random.choice(list(other_batches.keys()))
         opponent_id = int(opponent_key[0])
         obatch = other_batches[opponent_key][1]
+        assert "data_id" not in obatch, "contaminated obatch"
         batch = obatch.copy()
         batch["data_id"] = np.array([opponent_id] * batch.count, dtype=np.int32)
     return batch
