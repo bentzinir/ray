@@ -165,10 +165,11 @@ class DistributionalQDeltaTFModel(TFModelV2):
         self.q_value_head = tf.keras.Model(self.model_out, q_out)
         self.register_variables(self.q_value_head.variables)
 
-        self.n_dunits = 2 * self.action_space.n if divergence_type == 'state_action' else 2
-        d_out, _, _ = build_action_value(name + "/delta/", tf.stop_gradient(self.model_out), self.n_dunits)
-        self.delta = tf.keras.Model(self.model_out, d_out)
-        self.register_variables(self.delta.variables)
+        if divergence_type in ["state", "state_action"]:
+            self.n_dunits = 2 * self.action_space.n if divergence_type == 'state_action' else 2
+            d_out, _, _ = build_action_value(name + "/delta/", tf.stop_gradient(self.model_out), self.n_dunits)
+            self.delta = tf.keras.Model(self.model_out, d_out)
+            self.register_variables(self.delta.variables)
 
         if dueling:
             state_out = build_state_score(
@@ -233,5 +234,8 @@ class DistributionalQDeltaTFModel(TFModelV2):
         return self.state_value_head(model_out)
 
     def get_delta_values(self, model_out):
-        d_out = self.delta(model_out)
-        return tf.reshape(d_out, [-1, 2, int(self.n_dunits/2)])
+        if hasattr(self, "delta"):
+            d_out = self.delta(model_out)
+            return tf.reshape(d_out, [-1, 2, int(self.n_dunits/2)])
+        else:
+            return None
