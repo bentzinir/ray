@@ -17,6 +17,11 @@ import numpy as np
 from ray.rllib.models.tf.visionnet import VisionNetwork
 
 
+def base_model_init():
+    global BASE_MODEL
+    BASE_MODEL = {"main": None, "target": None}
+
+
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--stop-iters", type=int, default=200)
@@ -24,7 +29,7 @@ def get_parser():
     parser.add_argument("--env", type=str, default="none")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--framework", type=str, default="tf")
-    parser.add_argument("--shared_actor", action="store_true")
+    parser.add_argument("--shared_base_model", action="store_true")
     parser.add_argument("--ensemble_size", type=int, default=1)
     parser.add_argument("--timescale", type=int, default=10000)
     parser.add_argument("--timescale_grid_search", action="store_true")
@@ -144,8 +149,11 @@ def get_config(args):
         "compress_observations": np.issubdtype(single_env.observation_space.dtype, np.integer),
         # "learning_starts": args.learning_starts,
         "model": {
-            "custom_model": None if isinstance(obs_space, gym.spaces.Discrete) or len(obs_space.shape) <= 2
-                                        else VisionNetwork
+            "custom_model": None if isinstance(obs_space, gym.spaces.Discrete) or len(
+                obs_space.shape) <= 2 else VisionNetwork,
+            "custom_model_config": {
+                "shared_base_model": args.shared_base_model,
+            }
         }
     }
     config = update(config, override_config)
