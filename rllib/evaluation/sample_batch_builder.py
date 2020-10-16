@@ -11,6 +11,7 @@ from ray.rllib.utils.debug import summarize
 from ray.rllib.utils.types import PolicyID, AgentID
 from ray.rllib.env.base_env import _DUMMY_AGENT_ID
 from ray.util.debug import log_once
+import random
 
 if TYPE_CHECKING:
     from ray.rllib.agents.callbacks import DefaultCallbacks
@@ -216,6 +217,15 @@ class MultiAgentSampleBatchBuilder:
                 original_batches=pre_batches)
             self.policy_builders[self.agent_to_policy[agent_id]].add_batch(
                 post_batch)
+
+        # each agent is overloaded with a random opponent batch
+        for agent_id, post_batch in sorted(post_batches.items()):
+            other_batches = post_batches.copy()
+            del other_batches[agent_id]
+            if len(other_batches) > 0:
+                opponent_key = random.choice(list(other_batches.keys()))
+                other_batch = other_batches[opponent_key]
+                self.policy_builders[self.agent_to_policy[agent_id]].add_batch(other_batch)
 
         self.agent_builders.clear()
         self.agent_to_policy.clear()
