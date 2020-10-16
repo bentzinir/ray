@@ -58,7 +58,6 @@ def make_multiagent(env_name_or_creator):
                     input("(MultiEnv) Nan detected...")
                 obs[agent_id], rew[agent_id], done[agent_id], info[agent_id] = self.agents[idx].step(action)
                 self.episode_rewards[idx] += rew[agent_id]
-                # info[agent_id]['episodic_return'] = np.mean(self.reward_queues[idx])
                 info[agent_id]['nresets'] = self.nresets[idx]
                 if done[agent_id]:
                     self.dones.add(idx)
