@@ -7,7 +7,7 @@ cartpole-dqn:
     config:
         # Works for both torch and tf.
         framework: tf
-        n_step: 3
+        n_step: 1
         gamma: 0.95
         learning_starts: 10000
         rollout_fragment_length: 3

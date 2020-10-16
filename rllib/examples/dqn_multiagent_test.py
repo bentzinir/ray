@@ -28,14 +28,18 @@ if __name__ == "__main__":
     env.render()
     done = False
     cumulative_reward = 0
+    counter = 0
 
     while True:
         action = {}
+        counter += 1
         for agent_id, agent_obs in obs.items():
             policy_id = config['multiagent']['policy_mapping_fn'](agent_id)
+            # policy_id = 'policy_3'
             if config["env_config"]["normalize_obs"]:
                 agent_obs = agent_obs.astype(np.float32) / 255
-            action[agent_id] = tester.compute_action(agent_obs, policy_id=policy_id)
+            action[agent_id] = tester.compute_action(agent_obs, policy_id=policy_id, explore=False)
+        print(f"counter: {counter}")
         obs, reward, done, info = env.step(action)
         if args.vis_sleep:
             time.sleep(args.vis_sleep)
@@ -47,3 +51,4 @@ if __name__ == "__main__":
             obs = env.reset()
             print(f"R: {cumulative_reward}")
             cumulative_reward = 0
+            counter = 0
