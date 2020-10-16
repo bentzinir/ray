@@ -42,6 +42,7 @@ class DistributionalQDeltaTFModel(TFModelV2):
             initial_beta=1.0,
             beta=None,
             target_div=None,
+            shared_base=None,
             ):
         """Initialize variables of this model.
 
@@ -69,6 +70,11 @@ class DistributionalQDeltaTFModel(TFModelV2):
 
         super(DistributionalQDeltaTFModel, self).__init__(
             obs_space, action_space, num_outputs, model_config, name)
+
+        if shared_base is not None and \
+            model_config["custom_model_config"].get("shared_base_model", False):
+            self.base_model = shared_base
+            print(" !!! reusing base model !!! ")
 
         # setup the Q head output (i.e., model for get_q_values)
         self.model_out = tf.keras.layers.Input(
