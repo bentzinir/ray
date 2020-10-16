@@ -131,6 +131,9 @@ class ComputeTDErrorMixin:
 
 
 def build_q_model(policy, obs_space, action_space, config):
+    import ray.rllib.examples.dqn_multiagent_train as base_script
+    if not hasattr(base_script, "BASE_MODEL"):
+        base_script.base_model_init()
 
     if not isinstance(action_space, Discrete):
         raise UnsupportedSpaceException(
@@ -166,7 +169,8 @@ def build_q_model(policy, obs_space, action_space, config):
         divergence_type=config["divergence_type"],
         initial_beta=config["initial_beta"],
         beta=config["beta"],
-        target_div=config["target_div"],)
+        target_div=config["target_div"],
+        shared_base=base_script.BASE_MODEL["main"])
 
     policy.target_q_model = ModelCatalog.get_model_v2(
         obs_space=obs_space,
@@ -191,10 +195,14 @@ def build_q_model(policy, obs_space, action_space, config):
         divergence_type=config["divergence_type"],
         initial_beta=config["initial_beta"],
         beta=config["beta"],
-        target_div=config["target_div"],)
+        target_div=config["target_div"],
+        shared_base=base_script.BASE_MODEL["target"])
 
     policy.q_func_vars = policy.q_model.trainable_variables()
     policy.target_q_func_vars = policy.target_q_model.trainable_variables()
+    if base_script.BASE_MODEL["main"] is None:
+        base_script.BASE_MODEL = {"main": policy.q_model.base_model,
+                                  "target": policy.target_q_model.base_model}
     return policy.q_model
 
 
@@ -462,8 +470,6 @@ def _ensemble_postprocessing(policy, batch, other_batches):
         batch["data_id"] = np.zeros_like(batch[SampleBatch.REWARDS], dtype=np.int32)
     else:
         assert len(set(batch["agent_id"])) == 1
-        # agent_id = batch["agent_id"][0]
-        # print(f"(dqnma) agent id: {agent_id}, t: {batch['t']}, dones: {batch['dones']}")
         policy_id = int(batch["agent_id"][0][0])
         batch["data_id"] = np.array([policy_id]*batch.count, dtype=np.int32)
         if not policy.model.updated_policy_id:
@@ -472,14 +478,6 @@ def _ensemble_postprocessing(policy, batch, other_batches):
         # matter wht the delta network predicts. In addition we clip beta for safety cautions. Happens only once
         if policy_id == 0:
             policy.model.update_beta(-np.inf, session=policy.get_session())
-    # swap batches w.p 1/2
-    if isinstance(other_batches, dict) and other_batches and np.random.binomial(1, 0.5):
-        opponent_key = random.choice(list(other_batches.keys()))
-        opponent_id = int(opponent_key[0])
-        obatch = other_batches[opponent_key][1]
-        assert "data_id" not in obatch, "contaminated obatch"
-        batch = obatch.copy()
-        batch["data_id"] = np.array([opponent_id] * batch.count, dtype=np.int32)
     return batch
 
 
@@ -510,8 +508,6 @@ def _adjust_nstep(n_step, gamma, obs, actions, rewards, new_obs, dones):
 
 def postprocess_nstep_and_prio(policy, batch, other_agent=None, episode=None):
 
-    batch = _ensemble_postprocessing(policy, batch, other_agent)
-
     # N-step Q adjustments
     if policy.config["n_step"] > 1:
         _adjust_nstep(policy.config["n_step"], policy.config["gamma"],
@@ -532,6 +528,8 @@ def postprocess_nstep_and_prio(policy, batch, other_agent=None, episode=None):
             np.abs(convert_to_numpy(td_errors)) +
             policy.config["prioritized_replay_eps"])
         batch.data[PRIO_WEIGHTS] = new_priorities
+
+    batch = _ensemble_postprocessing(policy, batch, other_agent)
 
     assert len(set([len(v) for k, v in batch.items()])) == 1
 
