@@ -9,6 +9,7 @@ def make_multiagent(env_name_or_creator):
     class MultiEnv(MultiAgentEnv):
         def __init__(self, config):
             self.nagents = config.pop("num_agents", 1)
+            print(f"####################------------nagents: {self.nagents}-------------------#####################3")
             if isinstance(env_name_or_creator, str):
                 self.agents = [
                     gym.make(env_name_or_creator) for _ in range(self.nagents)

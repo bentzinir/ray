@@ -361,13 +361,27 @@ class RolloutWorker(ParallelIteratorWorker):
                 return env
 
         if hasattr(self.env, "agents"):
-            self.env.agents = [wrap(a) for a in self.env.agents]
-            assert isinstance(policy, dict)
-            for aidx in range(self.env.nagents):
-                policy_name = policy_mapping_fn(f"{aidx}")
-                policy_a_list = list(policy[policy_name])
-                policy_a_list[1] = self.env.agents[aidx].observation_space
-                policy[policy_name] = tuple(policy_a_list)
+            # self.env.agents = [wrap(a) for a in self.env.agents]
+            _policy = dict()
+            for aidx, agent in enumerate(self.env.agents):
+                self.env.agents[aidx] = wrap(agent)
+                graph, obs_space, act_space,  _ = policy[f'policy_{aidx}']
+                obs_space = self.env.agents[aidx].observation_space
+                _policy[f'policy_{aidx}'] = (graph, obs_space, act_space, _)
+            policy = _policy
+
+            # assert isinstance(policy, dict)
+            # for policy_name in policy.keys():
+            #     policy_idx = int(policy_name.split('_')[-1])
+            #     policy_a_list = list(policy[policy_name])
+            #     policy_a_list[1] = self.env.agents[policy_idx].observation_space
+            #     policy[policy_name] = tuple(policy_a_list)
+            # for aidx in range(self.env.nagents):
+            #     policy_name = policy_mapping_fn(f"{aidx}")
+            #     print(f":::Updating observation space for agent: {aidx}, policy name: {policy_name}:::")
+            #     policy_a_list = list(policy[policy_name])
+            #     policy_a_list[1] = self.env.agents[aidx].observation_space
+            #     policy[policy_name] = tuple(policy_a_list)
         else:
             self.env: EnvType = wrap(self.env)
 
