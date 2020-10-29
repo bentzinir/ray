@@ -8,11 +8,11 @@ from collections import deque
 def make_multiagent():
     class MultiEnv(MultiAgentEnv):
         def __init__(self, config):
-            self.nagents = config.pop("num_agents", 1)
-            if isinstance(config["env_name_or_creator"], str):
-                self.agents = [gym.make(config["env_name_or_creator"]) for _ in range(self.nagents)]
+            self.nagents = config.pop("N", 1)
+            if isinstance(config["env_id"], str):
+                self.agents = [gym.make(config["env_id"]) for _ in range(self.nagents)]
             else:
-                self.agents = [config["env_name_or_creator"] for _ in range(self.nagents)]
+                self.agents = [config["env_id"] for _ in range(self.nagents)]
             if config.pop("warp_obs", False):
                 from ray.rllib.env.atari_wrappers import WarpFrame
                 dim = config.pop("warp_dim", None)
@@ -203,6 +203,6 @@ class RoundRobinMultiAgent(MultiAgentEnv):
         return obs, rew, done, info
 
 
-MultiAgentCartPole = make_multiagent()({"env_name_or_creator": "CartPole-v0"})
-MultiAgentMountainCar = make_multiagent()({"env_name_or_creator": "MountainCarContinuous-v0"})
-MultiAgentPendulum = make_multiagent()({"env_name_or_creator": "Pendulum-v0"})
+MultiAgentCartPole = make_multiagent()({"env_id": "CartPole-v0"})
+MultiAgentMountainCar = make_multiagent()({"env_id": "MountainCarContinuous-v0"})
+MultiAgentPendulum = make_multiagent()({"env_id": "Pendulum-v0"})
