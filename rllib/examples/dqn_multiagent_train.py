@@ -52,10 +52,12 @@ def callback_builder():
             for i in range(worker.env.nagents):
                 episode.custom_metrics[f"episodic_return_{i}"] = np.mean(worker.env.reward_queues[i])
                 episode.custom_metrics[f"nresets_{i}"] = worker.env.nresets[i]
+            episode.custom_metrics["episodic_max"] = np.max([r[-1] for r in worker.env.reward_queues])
     return MyCallbacks
 
 
 def build_trainer_config(config):
+    config = copy.deepcopy(config)
     if isinstance(config["env"], str):
         single_env = gym.make(config["env"])
     elif isinstance(config["env"], dict) and config["env"].get('grid_search', False):  # grid search mode
@@ -68,8 +70,8 @@ def build_trainer_config(config):
         num_policies = config["ensemble_size"]
     elif config["ensemble_size"].get('grid_search', False):
         num_policies = max(config["ensemble_size"]['grid_search'])
-    config["env_config"] = {"num_agents": config["ensemble_size"],
-                            "env_name_or_creator": config["env"]}
+    config["env_config"] = {"N": config["ensemble_size"],
+                            "env_id": config["env"]}
     config["env"] = make_multiagent()
     config["callbacks"] = callback_builder()
     config["multiagent"] = {
@@ -90,26 +92,23 @@ if __name__ == "__main__":
     parser.add_argument("--f", type=str, default="none")
     args, extra_args = parser.parse_known_args()
     config = get_config(args.f)
-
-    trainer_config = build_trainer_config(copy.deepcopy(config))
+    trainer_config = build_trainer_config(config)
 
     ray.init(num_cpus=config["num_cpus"] or None,
-             local_mode=config["local_mode"],
-             )
+             local_mode=config["local_mode"],)
 
     if config["debug"]:
         trainer = DQNMATrainer(config=trainer_config)
-        i = 0
         while True:
             results = trainer.train()
             print(f"Iter: {results['training_iteration']}, R: {results['episode_reward_mean']}")
     else:
         tune.run(DQNMATrainer,
                  verbose=config["verbose"],
+                 num_samples=config["grid_repeats"],
                  config=trainer_config,
                  stop={"timesteps_total": config["timesteps"]},
                  reuse_actors=True,
                  local_dir=config["local_dir"],
                  checkpoint_freq=config["checkpoint_freq"],
-                 checkpoint_at_end=True,
-                 )
+                 checkpoint_at_end=True,)

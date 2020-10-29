@@ -136,7 +136,7 @@ DEFAULT_CONFIG = with_common_config({
     #nirbz: add-ons
     "beta": None,
     "entropy_scale": None,
-    "divergence_type": None,
+    "div_type": None,
     "target_div": None,
     "initial_beta": None,
 })

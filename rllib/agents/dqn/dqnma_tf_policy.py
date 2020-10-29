@@ -166,7 +166,7 @@ def build_q_model(policy, obs_space, action_space, config):
         add_layer_norm=isinstance(
             getattr(policy, "exploration", None), ParameterNoise)
         or config["exploration_config"]["type"] == "ParameterNoise",
-        divergence_type=config["divergence_type"],
+        divergence_type=config["div_type"],
         initial_beta=config["initial_beta"],
         beta=config["beta"],
         target_div=config["target_div"],
@@ -192,7 +192,7 @@ def build_q_model(policy, obs_space, action_space, config):
         add_layer_norm=isinstance(
             getattr(policy, "exploration", None), ParameterNoise)
         or config["exploration_config"]["type"] == "ParameterNoise",
-        divergence_type=config["divergence_type"],
+        divergence_type=config["div_type"],
         initial_beta=config["initial_beta"],
         beta=config["beta"],
         target_div=config["target_div"],
@@ -274,16 +274,16 @@ def build_q_losses(policy, model, _, train_batch):
             q_dist_tp1 * tf.expand_dims(q_tp1_best_one_hot_selection, -1), 1)
 
     # Apply ensemble diversity regularization
-    if policy.config["divergence_type"] == 'action':
+    if policy.config["div_type"] == 'action':
         # assert False, "understand how to calculate action logp"
         delta_t = tf.nn.log_softmax(opp_action_dist, axis=1)
         log_delta = tf.reduce_sum(one_hot_selection * delta_t, axis=1)
-    elif policy.config["divergence_type"] == 'state':
+    elif policy.config["div_type"] == 'state':
         log_delta = tf.nn.log_softmax(delta_tp1, axis=1)
         # we choose positive agent-based regularization in oppose to negative opponent-based pne
         log_delta = -tf.slice(log_delta, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
         # log_delta = tf.slice(log_delta, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
-    elif policy.config["divergence_type"] == 'state_action':
+    elif policy.config["div_type"] == 'state_action':
         one_hot_3d = tf.tile(tf.expand_dims(one_hot_selection, axis=1), multiples=[1, 2, 1])
         delta_selected = tf.reduce_sum(one_hot_3d * delta_t, axis=2, keepdims=True)
         log_delta = tf.nn.log_softmax(delta_selected, axis=1)
@@ -301,27 +301,27 @@ def build_q_losses(policy, model, _, train_batch):
         config["v_min"], config["v_max"])
 
     # Train diversity model
-    if policy.config["divergence_type"] == 'action':
+    if policy.config["div_type"] == 'action':
         delta_loss = 0  # non-parametric diversity regularization mode
-        divergence_vec = tf.math.not_equal(
+        div_vec = tf.math.not_equal(
             tf.argmax(q_t, axis=1, output_type=tf.int32),
             tf.argmax(train_batch["action_dist_inputs"], axis=1, output_type=tf.int32))
-        divergence_vec = tf.cast(divergence_vec, tf.float32)
-        divergence_vec = divergence_vec * l_policy
-        div_rate = tf.reduce_sum(divergence_vec) / l_count
+        div_vec = tf.cast(div_vec, tf.float32)
+        div_vec = div_vec * l_policy
+        div_rate = tf.reduce_sum(div_vec) / l_count
     else:
-        if policy.config["divergence_type"] == 'state_action':
+        if policy.config["div_type"] == 'state_action':
             d_t = tf.reduce_sum(one_hot_3d * delta_t, axis=2)
-        elif policy.config["divergence_type"] == 'state':
+        elif policy.config["div_type"] == 'state':
             d_t = tf.squeeze(delta_t, axis=2)
         else:
             raise ValueError
         delta_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(disc_label, d_t)
         delta_loss = tf.reduce_sum(leq_policy * delta_loss_vec) / leq_count
-        divergence_vec = tf.math.equal(disc_label, tf.argmax(d_t, axis=1, output_type=tf.int32))
-        divergence_vec = tf.cast(divergence_vec, tf.float32)
-        divergence_vec = divergence_vec * leq_policy
-        div_rate = tf.reduce_sum(divergence_vec) / leq_count
+        div_vec = tf.math.equal(disc_label, tf.argmax(d_t, axis=1, output_type=tf.int32))
+        div_vec = tf.cast(div_vec, tf.float32)
+        div_vec = div_vec * leq_policy
+        div_rate = tf.reduce_sum(div_vec) / leq_count
 
     # Auto adjust divergence coefficient
     beta_backup = tf.stop_gradient(model.target_div - div_rate)
