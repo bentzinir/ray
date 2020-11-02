@@ -56,7 +56,6 @@ def make_multiagent():
                     input("(MultiEnv) Nan detected...")
                 obs[agent_id], rew[agent_id], done[agent_id], info[agent_id] = self.agents[idx].step(action)
                 self.episode_rewards[idx] += rew[agent_id]
-                info[agent_id]['nresets'] = self.nresets[idx]
                 if done[agent_id]:
                     self.dones.add(idx)
                     self.reward_queues[idx].append(self.episode_rewards[idx])
@@ -74,6 +73,37 @@ def make_multiagent():
             [a.render() for i, a in enumerate(self.agents)]
 
     return MultiEnv
+
+
+def make_basic_multiagent():
+    class BasicMultiAgent(MultiAgentEnv):
+        """Env of N independent agents, each of which exits after 25 steps."""
+
+        def __init__(self, config):
+            self.nagents = config.pop("N", 1)
+            if isinstance(config["env_id"], str):
+                self.agents = [gym.make(config["env_id"]) for _ in range(self.nagents)]
+            else:
+                self.agents = [config["env_id"] for _ in range(self.nagents)]
+            self.dones = set()
+            self.observation_space = self.agents[0].observation_space
+            self.action_space = self.agents[0].action_space
+            self.resetted = False
+
+        def reset(self):
+            self.resetted = True
+            self.dones = set()
+            return {f"{i}": a.reset() for i, a in enumerate(self.agents)}
+
+        def step(self, action_dict):
+            obs, rew, done, info = {}, {}, {}, {}
+            for i, action in action_dict.items():
+                obs[i], rew[i], done[i], info[i] = self.agents[int(i)].step(action)
+                if done[i]:
+                    self.dones.add(i)
+            done["__all__"] = len(self.dones) == len(self.agents)
+            return obs, rew, done, info
+    return BasicMultiAgent
 
 
 class BasicMultiAgent(MultiAgentEnv):

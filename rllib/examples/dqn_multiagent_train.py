@@ -2,8 +2,6 @@ import argparse
 import gym
 import ray
 from ray import tune
-from ray.rllib.agents.dqn import DQNMATrainer
-from ray.rllib.agents.dqn.dqnma import DEFAULT_CONFIG
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.agents.callbacks import DefaultCallbacks
 from ray.rllib.evaluation import MultiAgentEpisode, RolloutWorker
@@ -16,6 +14,16 @@ import numpy as np
 from ray.rllib.models.tf.visionnet import VisionNetwork
 from ray.rllib.examples.parser_args import get_config
 import copy
+
+# switch between DQN and multiagent DQN for debugging purposes
+DQN_MODE = False
+if DQN_MODE:
+    print(f" !!!!! DQN Mode: !!!!! ")
+    from ray.rllib.agents.dqn import DQNTrainer as Trainer
+    from ray.rllib.agents.dqn.dqn import DEFAULT_CONFIG
+else:
+    from ray.rllib.agents.dqn import DQNMATrainer as Trainer
+    from ray.rllib.agents.dqn.dqnma import DEFAULT_CONFIG
 
 
 def base_model_init():
@@ -70,10 +78,10 @@ def build_trainer_config(config):
         num_policies = config["ensemble_size"]
     elif config["ensemble_size"].get('grid_search', False):
         num_policies = max(config["ensemble_size"]['grid_search'])
+    config["callbacks"] = callback_builder()
     config["env_config"] = {"N": config["ensemble_size"],
                             "env_id": config["env"]}
     config["env"] = make_multiagent()
-    config["callbacks"] = callback_builder()
     config["multiagent"] = {
         "policies": {"policy_{}".format(i): (None, obs_space, act_space, {}) for i in range(num_policies)},
         "policy_mapping_fn": (lambda x: f"policy_{x[0]}")}
@@ -98,12 +106,12 @@ if __name__ == "__main__":
              local_mode=config["local_mode"],)
 
     if config["debug"]:
-        trainer = DQNMATrainer(config=trainer_config)
+        trainer = Trainer(config=trainer_config)
         while True:
             results = trainer.train()
             print(f"Iter: {results['training_iteration']}, R: {results['episode_reward_mean']}")
     else:
-        tune.run(DQNMATrainer,
+        tune.run(Trainer,
                  verbose=config["verbose"],
                  num_samples=config["grid_repeats"],
                  config=trainer_config,
