@@ -52,8 +52,16 @@ div_type:
 target_div:
   grid_search: [0, 0.4, 0.8]
 
-## DEBUG
+## DEBUG Profile 1
 #env: CartPole-v0
 #ensemble_size: 2
 #div_type: action
 #target_div: 0.0
+
+## DEBUG Profile 2
+#ensemble_size:
+#  grid_search: [1, 1, 1, 1, 1]
+#div_type:
+#  grid_search: [action, action, action, action, action]
+#target_div:
+#  grid_search: [0.1, 0.1, 0.1, 0.1, 0.1]
