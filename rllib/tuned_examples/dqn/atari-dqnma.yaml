@@ -39,29 +39,29 @@ vis_sleep: 0.0
 grid_repeats: 1
 
 env:
-    grid_search:
+  grid_search:
+        - SpaceInvadersNoFrameskip-v4
         - BreakoutNoFrameskip-v4
         - BeamRiderNoFrameskip-v4
         - QbertNoFrameskip-v4
-        - SpaceInvadersNoFrameskip-v4
-#        - CartPole-v0
 ensemble_size:
-  grid_search: [1, 2, 4]
+  grid_search: [4, 2, 1]
 div_type:
   grid_search: [action, state]
 target_div:
-  grid_search: [0, 0.4, 0.8]
+  grid_search: [0.8, 0.4, 0]
 
-## DEBUG Profile 1
+## Flat Debug Profile
 #env: CartPole-v0
 #ensemble_size: 2
 #div_type: action
 #target_div: 0.0
 
-## DEBUG Profile 2
+## Tune Debug Profile
+#env: CartPole-v0
 #ensemble_size:
-#  grid_search: [1, 1, 1, 1, 1]
+#  grid_search: [1, 1]
 #div_type:
-#  grid_search: [action, action, action, action, action]
+#  grid_search: [action, action]
 #target_div:
-#  grid_search: [0.1, 0.1, 0.1, 0.1, 0.1]
+#  grid_search: [0.1, 0.1]

@@ -119,4 +119,5 @@ if __name__ == "__main__":
                  reuse_actors=True,
                  local_dir=config["local_dir"],
                  checkpoint_freq=config["checkpoint_freq"],
-                 checkpoint_at_end=True,)
+                 checkpoint_at_end=True,
+                 global_checkpoint_period=np.inf)
