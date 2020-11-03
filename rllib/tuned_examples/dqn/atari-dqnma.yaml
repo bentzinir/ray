@@ -49,7 +49,7 @@ ensemble_size:
 div_type:
   grid_search: [action, state]
 target_div:
-  grid_search: [0.8, 0.4, 0]
+  grid_search: [0.8, 0.6, 0.4, 0]
 
 ## Flat Debug Profile
 #env: CartPole-v0
