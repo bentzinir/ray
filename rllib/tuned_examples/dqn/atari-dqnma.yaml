@@ -40,10 +40,29 @@ grid_repeats: 1
 
 env:
   grid_search:
-        - SpaceInvadersNoFrameskip-v4
-        - BreakoutNoFrameskip-v4
-        - BeamRiderNoFrameskip-v4
+        - AlienNoFrameskip-v4
+        - AmidarNoFrameskip-v4
+        - AsteroidsNoFrameskip-v4
+        - BowlingNoFrameskip-v4
+        - DemonAttackNoFrameskip-v4
+        - FrostbiteNoFrameskip-v4
+        - GravitarNoFrameskip-v4
+        - KrullNoFrameskip-v4
+        - MsPacmanNoFrameskip-v4
+        - MontezumaRevengeNoFrameskip-v4
+        - NameThisGameNoFrameskip-v4
         - QbertNoFrameskip-v4
+        - RiverraidNoFrameskip-v4
+        - RobotankNoFrameskip-v4
+        - SeaquestNoFrameskip-v4
+        - SpaceInvadersNoFrameskip-v4
+        - StarGunnerNoFrameskip-v4
+        - TennisNoFrameskip-v4
+        - TimePilotNoFrameskip-v4
+        - TutankhamNoFrameskip-v4
+        - WizardOfWarNoFrameskip-v4
+        - BreakoutNoFrameskip-v4
+
 ensemble_size:
   grid_search: [4, 2, 1]
 div_type:
