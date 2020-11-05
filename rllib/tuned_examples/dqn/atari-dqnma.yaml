@@ -40,18 +40,21 @@ grid_repeats: 1
 
 env:
   grid_search:
+        - AirRaidNoFrameskip-v4  # hard
         - AlienNoFrameskip-v4
         - AmidarNoFrameskip-v4
         - AsteroidsNoFrameskip-v4
+        - BreakoutNoFrameskip-v4
         - BowlingNoFrameskip-v4
         - DemonAttackNoFrameskip-v4
         - FrostbiteNoFrameskip-v4
         - GravitarNoFrameskip-v4
         - KrullNoFrameskip-v4
         - MsPacmanNoFrameskip-v4
-        - MontezumaRevengeNoFrameskip-v4
+        - MontezumaRevengeNoFrameskip-v4  # hard
         - NameThisGameNoFrameskip-v4
-        - QbertNoFrameskip-v4
+        - PrivateEyeNoFrameskip-v4  # hard
+        - QbertNoFrameskip-v4  # hard
         - RiverraidNoFrameskip-v4
         - RobotankNoFrameskip-v4
         - SeaquestNoFrameskip-v4
@@ -61,8 +64,6 @@ env:
         - TimePilotNoFrameskip-v4
         - TutankhamNoFrameskip-v4
         - WizardOfWarNoFrameskip-v4
-        - BreakoutNoFrameskip-v4
-
 ensemble_size:
   grid_search: [4, 2, 1]
 div_type:
