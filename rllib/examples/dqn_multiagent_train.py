@@ -87,7 +87,7 @@ def build_trainer_config(config):
         "policy_mapping_fn": (lambda x: f"policy_{x[0]}")}
     config["compress_observations"] = np.issubdtype(single_env.observation_space.dtype, np.integer)
     config["model"] = {
-        "custom_model": None if isinstance(obs_space, gym.spaces.Discrete) or len(obs_space.shape) <= 2 else VisionNetwork,
+        # "custom_model": None if isinstance(obs_space, gym.spaces.Discrete) or len(obs_space.shape) <= 2 else VisionNetwork,
         "custom_model_config": {"shared_base_model": config["shared_base_model"]}}
 
     for key in [key for key in config if key not in DEFAULT_CONFIG]:

@@ -320,8 +320,8 @@ def calculate_rr_weights(config):
 
 def get_policy_class(config):
     if config["framework"] == "torch":
-        from ray.rllib.agents.dqn.dqn_torch_policy import DQNTorchPolicy
-        return DQNTorchPolicy
+        from ray.rllib.agents.dqn.dqnma_torch_policy import DQNMATorchPolicy
+        return DQNMATorchPolicy
     else:
         return DQNMATFPolicy
 

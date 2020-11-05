@@ -17,7 +17,6 @@ from ray.rllib.utils.framework import try_import_tf
 from ray.rllib.utils.tf_ops import huber_loss, reduce_mean_ignore_inf, \
     minimize_and_clip
 from ray.rllib.utils.tf_ops import make_tf_callable
-import random
 
 tf1, tf, tfv = try_import_tf()
 
@@ -473,11 +472,11 @@ def _ensemble_postprocessing(policy, batch, other_batches):
         policy_id = int(batch["agent_id"][0][0])
         batch["data_id"] = np.array([policy_id]*batch.count, dtype=np.int32)
         if not policy.model.updated_policy_id:
-            policy.model.update_policy_id(policy_id, session=policy.get_session())
+            policy.model.update_policy_id(policy_id, policy=policy)
         # update the target divergence of the primary agent to a negative value. This forces beta to go to zero no
         # matter wht the delta network predicts. In addition we clip beta for safety cautions. Happens only once
         if policy_id == 0:
-            policy.model.update_beta(-np.inf, session=policy.get_session())
+            policy.model.update_beta(-np.inf, policy=policy)
     return batch
 
 
@@ -538,7 +537,7 @@ def postprocess_nstep_and_prio(policy, batch, other_agent=None, episode=None):
 
 DQNMATFPolicy = build_tf_policy(
     name="DQNMATFPolicy",
-    get_default_config=lambda: ray.rllib.agents.dqn.dqn.DEFAULT_CONFIG,
+    get_default_config=lambda: ray.rllib.agents.dqn.dqnma.DEFAULT_CONFIG,
     make_model=build_q_model,
     action_distribution_fn=get_distribution_inputs_and_class,
     loss_fn=build_q_losses,

@@ -201,18 +201,20 @@ class DistributionalQDeltaTFModel(TFModelV2):
         self.register_variables([self.policy_id])
         self.updated_policy_id = False
 
-    def update_beta(self, x, session):
+    def update_beta(self, x, policy):
         if not self.updated_beta:
             print(f"Updating log beta value: {x}")
+            session = policy.get_session()
             if session is None:
                 self.log_beta.assign(x)
             else:
                 session.run(self.log_beta.assign(x))
             self.updated_beta = True
 
-    def update_policy_id(self, x, session):
+    def update_policy_id(self, x, policy):
         if not self.updated_policy_id:
             print(f"Updating policy id: {x}")
+            session = policy.get_session()
             if session is None:
                 self.policy_id.assign(x)
             else:
