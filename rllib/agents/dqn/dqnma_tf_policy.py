@@ -274,7 +274,6 @@ def build_q_losses(policy, model, _, train_batch):
 
     # Apply ensemble diversity regularization
     if policy.config["div_type"] == 'action':
-        # assert False, "understand how to calculate action logp"
         delta_t = tf.nn.log_softmax(opp_action_dist, axis=1)
         log_delta = tf.reduce_sum(one_hot_selection * delta_t, axis=1)
     elif policy.config["div_type"] == 'state':
@@ -327,7 +326,10 @@ def build_q_losses(policy, model, _, train_batch):
     beta_loss = - tf.reduce_mean(model.log_beta * beta_backup)
 
     # mask beta/delta loss for policy 0:
-    beta_loss = beta_loss * tf.cast(tf.math.not_equal(model.policy_id, 0), tf.float32)
+    if model.train_beta:
+        beta_loss = beta_loss * tf.cast(tf.math.not_equal(model.policy_id, 0), tf.float32)
+    else:
+        beta_loss = tf.constant(0.0)
     delta_loss = delta_loss * tf.cast(tf.math.not_equal(model.policy_id, 0), tf.float32)
 
     policy.delta_loss = delta_loss
@@ -506,7 +508,6 @@ def _adjust_nstep(n_step, gamma, obs, actions, rewards, new_obs, dones):
 
 
 def postprocess_nstep_and_prio(policy, batch, other_agent=None, episode=None):
-
     # N-step Q adjustments
     if policy.config["n_step"] > 1:
         _adjust_nstep(policy.config["n_step"], policy.config["gamma"],

@@ -187,15 +187,12 @@ def build_q_model_and_distribution(policy, obs_space, action_space, config):
         target_div=config["target_div"],
         shared_base=base_script.BASE_MODEL["target"])
 
-    # policy.target_q_func_vars = policy.target_q_model.variables()
-    # policy.q_func_vars = policy.q_model.variables()
+    policy.q_func_vars = policy.q_model.q_params
+    policy.target_q_func_vars = policy.target_q_model.q_params
 
-    policy.q_func_vars = policy.q_model.trainable_variables()
-    policy.target_q_func_vars = policy.target_q_model.trainable_variables()
     if base_script.BASE_MODEL["main"] is None:
-        print("!!! Not sharing base !!!")
-        # base_script.BASE_MODEL = {"main": policy.q_model.base_model,
-        #                           "target": policy.target_q_model.base_model}
+        base_script.BASE_MODEL = {"main": policy.q_model._base_model,
+                                  "target": policy.target_q_model._base_model}
 
     return policy.q_model, TorchCategorical
 
@@ -207,7 +204,7 @@ def get_distribution_inputs_and_class(policy,
                                       explore=True,
                                       is_training=False,
                                       **kwargs):
-    q_vals = compute_q_values(policy, model, obs_batch, explore, is_training)
+    q_vals, _ = compute_q_values(policy, model, obs_batch, explore, is_training)
     q_vals = q_vals[0] if isinstance(q_vals, tuple) else q_vals
 
     policy.q_values = q_vals
@@ -217,7 +214,7 @@ def get_distribution_inputs_and_class(policy,
 def build_q_losses(policy, model, _, train_batch):
     config = policy.config
     # Q-network evaluation.
-    q_t, q_logits_t, q_probs_t = compute_q_values(
+    (q_t, q_logits_t, q_probs_t), delta_t = compute_q_values(
         policy,
         policy.q_model,
         train_batch[SampleBatch.CUR_OBS],
@@ -225,7 +222,7 @@ def build_q_losses(policy, model, _, train_batch):
         is_training=True)
 
     # Target Q-network evaluation.
-    q_tp1, q_logits_tp1, q_probs_tp1 = compute_q_values(
+    (q_tp1, q_logits_tp1, q_probs_tp1), delta_tp1 = compute_q_values(
         policy,
         policy.target_q_model,
         train_batch[SampleBatch.NEXT_OBS],
@@ -252,8 +249,8 @@ def build_q_losses(policy, model, _, train_batch):
 
     # compute estimate of best possible value starting from state at t + 1
     if config["double_q"]:
-        q_tp1_using_online_net, q_logits_tp1_using_online_net, \
-            q_dist_tp1_using_online_net = compute_q_values(
+        (q_tp1_using_online_net, q_logits_tp1_using_online_net, \
+            q_dist_tp1_using_online_net), _ = compute_q_values(
                 policy,
                 policy.q_model,
                 train_batch[SampleBatch.NEXT_OBS],
@@ -276,6 +273,26 @@ def build_q_losses(policy, model, _, train_batch):
         q_probs_tp1_best = torch.sum(
             q_probs_tp1 * torch.unsqueeze(q_tp1_best_one_hot_selection, -1), 1)
 
+    # Apply ensemble diversity regularization
+    if policy.config["div_type"] == 'action':
+        delta_t = torch.nn.LogSoftmax(dim=1)(opp_action_dist)
+        log_delta = torch.sum(one_hot_selection * delta_t, dim=1)
+    elif policy.config["div_type"] == 'state':
+        log_delta = torch.nn.LogSoftmax(dim=1)(delta_tp1)
+        # we choose positive agent-based regularization in oppose to negative opponent-based pne
+        log_delta = -log_delta[:, AGENT_LABEL, :]
+        # log_delta = log_delta[:, OPPONENT_LABEL, :]
+    elif policy.config["div_type"] == 'state_action':
+        one_hot_3d = tf.tile(tf.expand_dims(one_hot_selection, axis=1), multiples=[1, 2, 1])
+        delta_selected = tf.reduce_sum(one_hot_3d * delta_t, axis=2, keepdims=True)
+        log_delta = tf.nn.log_softmax(delta_selected, axis=1)
+        log_delta = -tf.slice(log_delta, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
+    else:
+        raise ValueError
+
+    beta = torch.exp(model.log_beta)
+    q_tp1_best -= beta * torch.squeeze(log_delta)
+
     policy.q_loss = QLoss(
         q_t_selected, q_logits_t_selected, q_tp1_best, q_probs_tp1_best,
         train_batch[PRIO_WEIGHTS], train_batch[SampleBatch.REWARDS],
@@ -283,17 +300,77 @@ def build_q_losses(policy, model, _, train_batch):
         config["n_step"], config["num_atoms"],
         config["v_min"], config["v_max"])
 
-    return policy.q_loss.loss
+    # Train diversity model
+    if policy.config["div_type"] == 'action':
+        delta_loss = torch.tensor(data=0.0, dtype=torch.float32, requires_grad=True)  # non-parametric diversity regularization mode
+        div_vec = torch.argmax(q_t, 1) != torch.argmax(train_batch["action_dist_inputs"], 1)
+        div_vec = div_vec * l_policy
+        div_rate = torch.sum(div_vec) / l_count
+    else:
+        if policy.config["div_type"] == 'state_action':
+            d_t = torch.sum(one_hot_3d * delta_t, dim=2)
+        elif policy.config["div_type"] == 'state':
+            d_t = torch.squeeze(delta_t, dim=2)
+        else:
+            raise ValueError
+        ce_loss = nn.CrossEntropyLoss(reduction='none')
+        delta_loss_vec = ce_loss(d_t, disc_label)
+        delta_loss = torch.sum(leq_policy * delta_loss_vec) / leq_count
+        div_vec = disc_label == torch.argmax(d_t, 1)
+        div_vec = div_vec * leq_policy
+        div_rate = torch.sum(div_vec) / leq_count
+
+    # Auto adjust divergence coefficient
+    beta_backup = (model.target_div - div_rate).detach()
+    beta_loss = - torch.mean(model.log_beta * beta_backup)
+
+    # mask beta/delta loss for policy 0:
+    if not model.train_beta or model.policy_id == 0:
+        beta_loss = torch.tensor(data=0.0, dtype=torch.float32, requires_grad=True)
+    if model.policy_id == 0:
+        delta_loss = torch.tensor(data=0.0, dtype=torch.float32, requires_grad=True)
+
+    policy.delta_loss = delta_loss
+    policy.beta_loss = beta_loss
+    policy.beta_value = beta
+    policy.target_div = model.target_div
+    policy.div_rate = div_rate
+    policy.delta_penalty = log_delta
+
+    if not hasattr(policy.model, "delta_module"):
+        return tuple([beta_loss] + [policy.q_loss.loss])
+    else:
+        return tuple([beta_loss] + [delta_loss] + [policy.q_loss.loss])
 
 
 def adam_optimizer(policy, config):
-    return torch.optim.Adam(
-        policy.q_func_vars, lr=policy.cur_lr, eps=config["adam_epsilon"])
+    policy.q_optim = torch.optim.Adam(policy.q_func_vars, lr=policy.cur_lr, eps=config["adam_epsilon"])
+
+    policy.beta_optim = torch.optim.Adam(
+        params=[policy.model.log_beta],
+        lr=config["entropy_lr"],
+        eps=config["adam_epsilon"])
+    if not hasattr(policy.model, "delta_module"):
+        return tuple([policy.beta_optim] + [policy.q_optim])
+    else:
+        policy.delta_optim = torch.optim.Adam(
+            params=policy.q_model.delta_params,
+            lr=policy.cur_lr,
+            eps=config["adam_epsilon"])
+        return tuple([policy.beta_optim] + [policy.delta_optim] + [policy.q_optim])
 
 
 def build_q_stats(policy, batch):
     return dict({
         "cur_lr": policy.cur_lr,
+        # nirbz: ensemble learning add ons
+        "delta_loss": policy.delta_loss,
+        "beta_loss": torch.mean(policy.beta_loss),
+        "beta_value": torch.mean(policy.beta_value),
+        "target_div": torch.mean(policy.target_div),
+        "div_rate": policy.div_rate,
+        "delta_penalty": policy.delta_penalty,
+        "policy_id": policy.model.policy_id,
     }, **policy.q_loss.stats)
 
 
@@ -307,6 +384,9 @@ def after_init(policy, obs_space, action_space, config):
     # Move target net to device (this is done autoatically for the
     # policy.model, but not for any other models the policy has).
     policy.target_q_model = policy.target_q_model.to(policy.device)
+    policy.model.log_beta = policy.model.log_beta.to(policy.device)
+    policy.model.target_div = policy.model.target_div.to(policy.device)
+    policy.model.policy_id = policy.model.policy_id.to(policy.device)
 
 
 def compute_q_values(policy, model, obs, explore, is_training=False):
@@ -323,6 +403,7 @@ def compute_q_values(policy, model, obs, explore, is_training=False):
     else:
         (action_scores, logits,
          probs_or_logits) = model.get_q_value_distributions(model_out)
+    delta = model.get_delta_values(model_out)
 
     if config["dueling"]:
         state_score = model.get_state_value(model_out)
@@ -347,7 +428,7 @@ def compute_q_values(policy, model, obs, explore, is_training=False):
     else:
         value = action_scores
 
-    return value, logits, probs_or_logits
+    return (value, logits, probs_or_logits), delta
 
 
 def grad_process_and_td_error_fn(policy, optimizer, loss):

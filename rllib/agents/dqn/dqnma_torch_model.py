@@ -2,6 +2,7 @@ from ray.rllib.models.torch.misc import SlimFC
 from ray.rllib.models.torch.modules.noisy_layer import NoisyLayer
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.utils.framework import try_import_torch
+import numpy as np
 
 torch, nn = try_import_torch()
 
@@ -64,7 +65,7 @@ class DQNMATorchModel(TorchModelV2, nn.Module):
 
         if shared_base is not None and \
             model_config["custom_model_config"].get("shared_base_model", False):
-            self.base_model = shared_base
+            self._base_model = shared_base
             print(" !!! reusing base model !!! ")
 
         self.dueling = dueling
@@ -72,10 +73,12 @@ class DQNMATorchModel(TorchModelV2, nn.Module):
         self.v_min = v_min
         self.v_max = v_max
         self.sigma0 = sigma0
+        self.q_params = get_params(self._base_model)
         ins = num_outputs
 
         advantage_module = nn.Sequential()
         value_module = nn.Sequential()
+        delta_module = nn.Sequential()
 
         # Dueling case: Build the shared (advantages and value) fc-network.
         for i, n in enumerate(q_hiddens):
@@ -90,6 +93,11 @@ class DQNMATorchModel(TorchModelV2, nn.Module):
                     NoisyLayer(
                         ins, n, sigma0=self.sigma0,
                         activation=dueling_activation))
+                delta_module.add_module(
+                    "dueling_D_{}".format(i),
+                    NoisyLayer(
+                        ins, n, sigma0=self.sigma0,
+                        activation=dueling_activation))
             else:
                 advantage_module.add_module(
                     "dueling_A_{}".format(i),
@@ -97,12 +105,17 @@ class DQNMATorchModel(TorchModelV2, nn.Module):
                 value_module.add_module(
                     "dueling_V_{}".format(i),
                     SlimFC(ins, n, activation_fn=dueling_activation))
+                delta_module.add_module(
+                    "dueling_D_{}".format(i),
+                    SlimFC(ins, n, activation_fn=dueling_activation))
                 # Add LayerNorm after each Dense.
                 if add_layer_norm:
                     advantage_module.add_module(
                         "LayerNorm_A_{}".format(i), nn.LayerNorm(n))
                     value_module.add_module(
                         "LayerNorm_V_{}".format(i), nn.LayerNorm(n))
+                    delta_module.add_module(
+                        "LayerNorm_D_{}".format(i), nn.LayerNorm(n))
             ins = n
 
         # Actual Advantages layer (nodes=num-actions).
@@ -120,36 +133,47 @@ class DQNMATorchModel(TorchModelV2, nn.Module):
                     activation_fn=None))
 
         self.advantage_module = advantage_module
+        self.q_params.extend(get_params(self.advantage_module))
 
         # Value layer (nodes=1).
         if self.dueling:
             value_module.add_module("V", SlimFC(ins, 1, activation_fn=None))
             self.value_module = value_module
+            self.q_params.extend(get_params(self.value_module))
+
+        # Delta layer
+        if divergence_type in ["state", "state_action"]:
+            self.n_dunits = 2 * self.action_space.n if divergence_type == 'state_action' else 2
+            delta_module.add_module("D", SlimFC(ins, self.n_dunits * self.num_atoms, activation_fn=None))
+            self.delta_module = delta_module
+            self.delta_params = get_params(self.delta_module)
 
         ######################
         # BETA
+        self.train_beta = True
         if beta is not None:
             initial_beta = beta
+            self.train_beta = False
             print(f":::setting a constant beta value! ({beta}):::")
-        self.beta = initial_beta
+        self.log_beta = torch.tensor(data=[np.log(initial_beta + 1e-16)], dtype=torch.float32, requires_grad=True)
         self.updated_beta = False
-        self.target_div = target_div
+        self.target_div = torch.tensor(data=[target_div], dtype=torch.float32, requires_grad=False)
 
         ###########################
         # Policy id
-        self.policy_id = -1  # tf.Variable(-1, dtype=tf.int32, name="policy_id", trainable=False)
+        self.policy_id = torch.tensor(data=[-1], dtype=torch.int32, requires_grad=False)
         self.updated_policy_id = False
 
     def update_beta(self, x, **kwargs):
         if not self.updated_beta:
             print(f"Updating log beta value: {x}")
-            self.beta = x
+            self.log_beta[0] = x
             self.updated_beta = True
 
     def update_policy_id(self, x, **kwargs):
         if not self.updated_policy_id:
             print(f"Updating policy id: {x}")
-            self.policy_id = x
+            self.policy_id[0] = x
             self.updated_policy_id = True
 
     def get_q_value_distributions(self, model_out):
@@ -189,3 +213,14 @@ class DQNMATorchModel(TorchModelV2, nn.Module):
         """Returns the state value prediction for the given state embedding."""
 
         return self.value_module(model_out)
+
+    def get_delta_values(self, model_out):
+        if hasattr(self, "delta_module"):
+            d_out = self.delta_module(model_out)
+            return d_out.view(-1, 2, int(self.n_dunits/2))
+        else:
+            return
+
+
+def get_params(module):
+    return [val for key, val in module.state_dict(keep_vars=True).items()]
