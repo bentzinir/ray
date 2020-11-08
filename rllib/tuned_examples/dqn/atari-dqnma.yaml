@@ -41,35 +41,36 @@ grid_repeats: 1
 env:
   grid_search:
         - AirRaidNoFrameskip-v4  # hard
-        - AlienNoFrameskip-v4
-        - AmidarNoFrameskip-v4
-        - AsteroidsNoFrameskip-v4
-        - BreakoutNoFrameskip-v4
-        - BowlingNoFrameskip-v4
-        - DemonAttackNoFrameskip-v4
-        - FrostbiteNoFrameskip-v4
-        - GravitarNoFrameskip-v4
-        - KrullNoFrameskip-v4
-        - MsPacmanNoFrameskip-v4
-        - MontezumaRevengeNoFrameskip-v4  # hard
-        - NameThisGameNoFrameskip-v4
         - PrivateEyeNoFrameskip-v4  # hard
         - QbertNoFrameskip-v4  # hard
-        - RiverraidNoFrameskip-v4
-        - RobotankNoFrameskip-v4
-        - SeaquestNoFrameskip-v4
-        - SpaceInvadersNoFrameskip-v4
-        - StarGunnerNoFrameskip-v4
-        - TennisNoFrameskip-v4
-        - TimePilotNoFrameskip-v4
-        - TutankhamNoFrameskip-v4
+        - MontezumaRevengeNoFrameskip-v4  # hard
+
+#        - AlienNoFrameskip-v4
+#        - AmidarNoFrameskip-v4
+#        - AsteroidsNoFrameskip-v4
+#        - BreakoutNoFrameskip-v4
+#        - BowlingNoFrameskip-v4
+#        - DemonAttackNoFrameskip-v4
+#        - FrostbiteNoFrameskip-v4
+#        - GravitarNoFrameskip-v4
+#        - KrullNoFrameskip-v4
+#        - MsPacmanNoFrameskip-v4
+#        - NameThisGameNoFrameskip-v4
+#        - RiverraidNoFrameskip-v4
+#        - RobotankNoFrameskip-v4
+#        - SeaquestNoFrameskip-v4
+#        - SpaceInvadersNoFrameskip-v4
+#        - StarGunnerNoFrameskip-v4
+#        - TennisNoFrameskip-v4
+#        - TimePilotNoFrameskip-v4
+#        - TutankhamNoFrameskip-v4
         - WizardOfWarNoFrameskip-v4
 ensemble_size:
-  grid_search: [16, 8, 4, 2 ,1]
+  grid_search: [12, 6 ,1]
 div_type:
   grid_search: [action, state]
 target_div:
-  grid_search: [0.8, 0.6, 0.4, 0]
+  grid_search: [0.8, 0.4, 0]
 
 ## Flat Debug Profile
 #env: CartPole-v0
