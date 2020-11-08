@@ -185,8 +185,10 @@ class DistributionalQDeltaTFModel(TFModelV2):
 
         ######################
         # BETA
+        self.train_beta = True
         if beta is not None:
             initial_beta = beta
+            self.train_beta = False
             print(f":::setting a constant beta value! ({beta}):::")
         self.log_beta = tf.Variable(np.log(initial_beta), dtype=tf.float32, name="log_beta",
                                     constraint=lambda x: tf.clip_by_value(x, np.log(1e-20), np.log(100)))

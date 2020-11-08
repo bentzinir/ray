@@ -85,6 +85,7 @@ class FullyConnectedNetwork(TorchModelV2, nn.Module):
             self._append_free_log_std = AppendBiasLayer(num_outputs)
 
         self._hidden_layers = nn.Sequential(*layers)
+        self._base_model = self._hidden_layers
 
         self._value_branch_separate = None
         if not self.vf_share_layers:

@@ -95,6 +95,7 @@ class VisionNetwork(TorchModelV2, nn.Module):
                 self.num_outputs = out_channels
 
         self._convs = nn.Sequential(*layers)
+        self._base_model = self._convs
 
         # Build the value layers
         self._value_branch_separate = self._value_branch = None
