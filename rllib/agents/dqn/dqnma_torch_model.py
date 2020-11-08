@@ -214,7 +214,9 @@ class DQNMATorchModel(TorchModelV2, nn.Module):
 
         return self.value_module(model_out)
 
-    def get_delta_values(self, model_out):
+    def get_delta_values(self, model_out, detach=True):
+        if detach:
+            model_out = model_out.detach()
         if hasattr(self, "delta_module"):
             d_out = self.delta_module(model_out)
             return d_out.view(-1, 2, int(self.n_dunits/2))
