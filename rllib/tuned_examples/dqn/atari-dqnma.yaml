@@ -64,9 +64,9 @@ env:
 #        - TennisNoFrameskip-v4
 #        - TimePilotNoFrameskip-v4
 #        - TutankhamNoFrameskip-v4
-        - WizardOfWarNoFrameskip-v4
+#        - WizardOfWorNoFrameskip-v4
 ensemble_size:
-  grid_search: [12, 6 ,1]
+  grid_search: [4, 8]
 div_type:
   grid_search: [action, state]
 target_div:
