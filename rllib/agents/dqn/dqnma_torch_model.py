@@ -155,25 +155,25 @@ class DQNMATorchModel(TorchModelV2, nn.Module):
             initial_beta = beta
             self.train_beta = False
             print(f":::setting a constant beta value! ({beta}):::")
-        self.log_beta = torch.tensor(data=[np.log(initial_beta + 1e-16)], dtype=torch.float32, requires_grad=True)
+        self.log_beta = torch.tensor(np.log(initial_beta + 1e-16), dtype=torch.float32, requires_grad=True)
         self.updated_beta = False
-        self.target_div = torch.tensor(data=[target_div], dtype=torch.float32, requires_grad=False)
+        self.target_div = torch.tensor(data=target_div, dtype=torch.float32, requires_grad=False)
 
         ###########################
         # Policy id
-        self.policy_id = torch.tensor(data=[-1], dtype=torch.int32, requires_grad=False)
+        self.policy_id = torch.tensor(data=-1, dtype=torch.int32, requires_grad=False)
         self.updated_policy_id = False
 
     def update_beta(self, x, **kwargs):
         if not self.updated_beta:
             print(f"Updating log beta value: {x}")
-            self.log_beta[0] = x
+            self.log_beta.data += x - self.log_beta.data
             self.updated_beta = True
 
     def update_policy_id(self, x, **kwargs):
         if not self.updated_policy_id:
             print(f"Updating policy id: {x}")
-            self.policy_id[0] = x
+            self.policy_id.data += x - self.policy_id.data
             self.updated_policy_id = True
 
     def get_q_value_distributions(self, model_out):
