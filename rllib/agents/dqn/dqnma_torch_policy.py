@@ -384,9 +384,6 @@ def after_init(policy, obs_space, action_space, config):
     # Move target net to device (this is done autoatically for the
     # policy.model, but not for any other models the policy has).
     policy.target_q_model = policy.target_q_model.to(policy.device)
-    policy.model.log_beta = policy.model.log_beta.to(policy.device)
-    policy.model.target_div = policy.model.target_div.to(policy.device)
-    policy.model.policy_id = policy.model.policy_id.to(policy.device)
 
 
 def compute_q_values(policy, model, obs, explore, is_training=False):
