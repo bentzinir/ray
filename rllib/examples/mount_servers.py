@@ -8,6 +8,9 @@ def main(args):
     df = read_ods(args.servers, sheet_idx)
 
     for index, row in df.iterrows():
+        if row["STATUS"] == 0:
+            print(f"Skipping: {row['IP']}")
+            continue
         ip = row["IP"]
         username = row["username"]
         remote_dir = row["directory"]
