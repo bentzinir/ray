@@ -45,7 +45,7 @@ env:
         - QbertNoFrameskip-v4  # hard
         - MontezumaRevengeNoFrameskip-v4  # hard
 
-#        - AlienNoFrameskip-v4
+#        - AlienNoFrameskip-v4  # hard
 #        - AmidarNoFrameskip-v4
 #        - AsteroidsNoFrameskip-v4
 #        - BreakoutNoFrameskip-v4
