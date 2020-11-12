@@ -234,7 +234,7 @@ def build_q_losses(policy, model, _, train_batch):
     leq_policy = (train_batch["data_id"] <= model.policy_id).float()
     eq_policy = (train_batch["data_id"] == model.policy_id).float()
     disc_label = (OPPONENT_LABEL * l_policy + AGENT_LABEL * eq_policy).long()
-    opp_action_dist = train_batch["action_dist_inputs"]
+    opp_action_dist = train_batch["action_dist_inputs"] * torch.unsqueeze(l_policy, dim=1)
     l_count = 1e-8 + torch.sum(l_policy)
     leq_count = 1e-8 + torch.sum(leq_policy)
 
