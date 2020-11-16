@@ -9,7 +9,7 @@ shared_base_model: true
 timesteps: 1000000
 gamma: 0.99
 beta: null
-initial_beta: 0.05
+initial_beta: 1.0
 local_dir: none
 checkpoint_dir: null
 checkpoint_freq: 0
