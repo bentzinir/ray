@@ -240,7 +240,7 @@ def build_q_losses(policy, model, _, train_batch):
     leq_policy = tf.cast(tf.math.less_equal(train_batch["data_id"], model.policy_id), tf.float32)
     eq_policy = tf.cast(tf.math.equal(train_batch["data_id"], model.policy_id), tf.float32)
     disc_label = tf.cast(OPPONENT_LABEL * l_policy + AGENT_LABEL * eq_policy, tf.int32)
-    opp_action_dist = tf.expand_dims(l_policy, 1) * train_batch["action_dist_inputs"]
+    # opp_action_dist = tf.expand_dims(l_policy, 1) * train_batch["action_dist_inputs"]
     l_count = 1e-8 + tf.reduce_sum(l_policy)
     leq_count = 1e-8 + tf.reduce_sum(leq_policy)
 
@@ -274,13 +274,17 @@ def build_q_losses(policy, model, _, train_batch):
 
     # Apply ensemble diversity regularization
     if policy.config["div_type"] == 'action':
-        delta_t = tf.nn.log_softmax(opp_action_dist, axis=1)
+        # delta_t = tf.nn.log_softmax(train_batch["action_dist_inputs"], axis=1)
+        delta_t = tf.nn.softmax(train_batch["action_dist_inputs"], axis=1)
         log_delta = tf.reduce_sum(one_hot_selection * delta_t, axis=1)
+        log_delta = l_policy * log_delta
     elif policy.config["div_type"] == 'state':
-        log_delta = tf.nn.log_softmax(delta_tp1, axis=1)
+        # log_delta = tf.nn.log_softmax(delta_tp1, axis=1)
+        log_delta = tf.nn.softmax(delta_tp1, axis=1)
         # we choose positive agent-based regularization in oppose to negative opponent-based pne
-        log_delta = -tf.slice(log_delta, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
+        # log_delta = -tf.slice(log_delta, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
         # log_delta = tf.slice(log_delta, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
+        log_delta = tf.slice(log_delta, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
     elif policy.config["div_type"] == 'state_action':
         one_hot_3d = tf.tile(tf.expand_dims(one_hot_selection, axis=1), multiples=[1, 2, 1])
         delta_selected = tf.reduce_sum(one_hot_3d * delta_t, axis=2, keepdims=True)
