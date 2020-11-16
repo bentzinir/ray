@@ -234,7 +234,7 @@ def build_q_losses(policy, model, _, train_batch):
     leq_policy = (train_batch["data_id"] <= model.policy_id).float()
     eq_policy = (train_batch["data_id"] == model.policy_id).float()
     disc_label = (OPPONENT_LABEL * l_policy + AGENT_LABEL * eq_policy).long()
-    opp_action_dist = train_batch["action_dist_inputs"] * torch.unsqueeze(l_policy, dim=1)
+    # opp_action_dist = train_batch["action_dist_inputs"] * torch.unsqueeze(l_policy, dim=1)
     l_count = 1e-8 + torch.sum(l_policy)
     leq_count = 1e-8 + torch.sum(leq_policy)
 
@@ -275,13 +275,17 @@ def build_q_losses(policy, model, _, train_batch):
 
     # Apply ensemble diversity regularization
     if policy.config["div_type"] == 'action':
-        delta_t = torch.nn.LogSoftmax(dim=1)(opp_action_dist)
+        # delta_t = torch.nn.LogSoftmax(dim=1)(train_batch["action_dist_inputs"])
+        delta_t = torch.nn.Softmax(dim=1)(train_batch["action_dist_inputs"])
         log_delta = torch.sum(one_hot_selection * delta_t, dim=1)
+        log_delta = l_policy * log_delta
     elif policy.config["div_type"] == 'state':
-        log_delta = torch.nn.LogSoftmax(dim=1)(delta_tp1)
+        # log_delta = torch.nn.LogSoftmax(dim=1)(delta_tp1)
+        log_delta = torch.nn.Softmax(dim=1)(delta_tp1)
         # we choose positive agent-based regularization in oppose to negative opponent-based pne
-        log_delta = -log_delta[:, AGENT_LABEL, :]
+        # log_delta = -log_delta[:, AGENT_LABEL, :]
         # log_delta = log_delta[:, OPPONENT_LABEL, :]
+        log_delta = log_delta[:, OPPONENT_LABEL, :]
     elif policy.config["div_type"] == 'state_action':
         one_hot_3d = tf.tile(tf.expand_dims(one_hot_selection, axis=1), multiples=[1, 2, 1])
         delta_selected = tf.reduce_sum(one_hot_3d * delta_t, axis=2, keepdims=True)
