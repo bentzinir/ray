@@ -223,7 +223,26 @@ class MultiAgentSampleBatchBuilder:
             other_batches = post_batches.copy()
             del other_batches[agent_id]
             if len(other_batches) > 0:
-                opponent_key = random.choice(list(other_batches.keys()))
+                uniform = True
+                if uniform:
+                    opponent_key = random.choice(list(other_batches.keys()))
+
+                # TODO: experimenting with prioritized opponent batch overloading
+                else:
+                    rs = []
+                    for oidx in list(other_batches.keys()):
+                        rs.append(np.nanmean(
+                            [v.get('ep_R', np.nan)
+                             for v in other_batches[oidx]['infos']]))
+                    if np.any(np.isnan(rs)):
+                        weights = [1/len(rs)] * len(rs)
+                    else:
+                        import scipy.special
+                        rs_norm = np.array(rs) / np.array(rs).max()
+                        weights = scipy.special.softmax(rs_norm)
+                    opponent_key = random.choices(population=list(other_batches.keys()),
+                                                  weights=weights, k=1)[0]
+
                 other_batch = other_batches[opponent_key]
                 self.policy_builders[self.agent_to_policy[agent_id]].add_batch(other_batch)
 

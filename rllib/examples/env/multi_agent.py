@@ -15,7 +15,7 @@ def make_multiagent():
                 self.agents = [config["env_id"] for _ in range(self.nagents)]
             if config.pop("warp_obs", False):
                 from ray.rllib.env.atari_wrappers import WarpFrame
-                dim = config.pop("warp_dim", None)
+                dim = config.get("warp_dim", None)
                 self.agents = [WarpFrame(agent, dim=dim) for agent in self.agents]
             self.dones = set()
             if hasattr(self.agents[0], 'spec'):
@@ -25,12 +25,13 @@ def make_multiagent():
             self.action_space = self.agents[0].action_space
             self.reward_queues = [deque(maxlen=50) for _ in range(self.nagents)]
             self.episode_rewards = [0 for _ in range(self.nagents)]
+            self.len_queues = [deque(maxlen=50) for _ in range(self.nagents)]
+            self.episode_lens = [0 for _ in range(self.nagents)]
             self.nresets = [0 for _ in range(self.nagents)]
-            self.elapsed = [0 for _ in range(self.nagents)]
 
         def reset_i(self, i):
             self.nresets[i] += 1
-            self.elapsed[i] = 0
+            self.episode_lens[i] = 0
             self.episode_rewards[i] = 0
             return self.agents[i].reset()
 
@@ -51,14 +52,17 @@ def make_multiagent():
             obs, rew, done, info = {}, {}, {}, {}
             for agent_id, action in action_dict.items():
                 idx = self.id2idx(agent_id)
-                self.elapsed[idx] += 1
                 if np.any(np.isnan(action)):
                     input("(MultiEnv) Nan detected...")
                 obs[agent_id], rew[agent_id], done[agent_id], info[agent_id] = self.agents[idx].step(action)
                 self.episode_rewards[idx] += rew[agent_id]
+                self.episode_lens[idx] += 1
+                info[agent_id]['ep_R'] = np.nanmean(self.reward_queues[idx])
+                info[agent_id]['ep_T'] = np.nanmean(self.len_queues[idx])
                 if done[agent_id]:
                     self.dones.add(idx)
                     self.reward_queues[idx].append(self.episode_rewards[idx])
+                    self.len_queues[idx].append(self.episode_lens[idx])
                     # reset agent at idx. This will also modify agent_id of idx.
                     obs_i = self.reset_i(idx)
                     # spawn a new agent id at idx
@@ -80,7 +84,7 @@ def make_basic_multiagent():
         """Env of N independent agents, each of which exits after 25 steps."""
 
         def __init__(self, config):
-            self.nagents = config.pop("N", 1)
+            self.nagents = config.get("N", 1)
             if isinstance(config["env_id"], str):
                 self.agents = [gym.make(config["env_id"]) for _ in range(self.nagents)]
             else:
