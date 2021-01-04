@@ -39,10 +39,12 @@ class DistributionalQDeltaTFModel(TFModelV2):
             #  the net.
             add_layer_norm=False,
             divergence_type='none',
-            initial_beta=1.0,
+            initial_beta=None,
             beta=None,
             target_div=None,
             shared_base=None,
+            ensemble_size=None,
+            multi_binary=False
             ):
         """Initialize variables of this model.
 
@@ -171,8 +173,9 @@ class DistributionalQDeltaTFModel(TFModelV2):
         self.q_value_head = tf.keras.Model(self.model_out, q_out)
         self.register_variables(self.q_value_head.variables)
 
-        if divergence_type in ["state", "state_action"]:
-            self.n_dunits = 2 * self.action_space.n if divergence_type == 'state_action' else 2
+        assert divergence_type != 'state_action', "Not supported"
+        if divergence_type == 'state':
+            self.n_dunits = 2 * ensemble_size if multi_binary else 2
             d_out, _, _ = build_action_value(name + "/delta/", tf.stop_gradient(self.model_out), self.n_dunits)
             self.delta = tf.keras.Model(self.model_out, d_out)
             self.register_variables(self.delta.variables)
@@ -190,7 +193,9 @@ class DistributionalQDeltaTFModel(TFModelV2):
             initial_beta = beta
             self.train_beta = False
             print(f":::setting a constant beta value! ({beta}):::")
-        self.log_beta = tf.Variable(np.log(initial_beta), dtype=tf.float32, name="log_beta",
+        self.opponent_size = ensemble_size if multi_binary else 1
+        initial_beta = np.log([initial_beta for _ in range(self.opponent_size)])
+        self.log_beta = tf.Variable(initial_beta, dtype=tf.float32, name="log_beta",
                                     constraint=lambda x: tf.clip_by_value(x, np.log(1e-20), np.log(100)))
         self.beta = tf.exp(self.log_beta)
         self.register_variables([self.log_beta])
@@ -208,9 +213,9 @@ class DistributionalQDeltaTFModel(TFModelV2):
             print(f"Updating log beta value: {x}")
             session = policy.get_session()
             if session is None:
-                self.log_beta.assign(x)
+                self.log_beta.assign([x] * self.opponent_size)
             else:
-                session.run(self.log_beta.assign(x))
+                session.run(self.log_beta.assign([x] * self.opponent_size))
             self.updated_beta = True
 
     def update_policy_id(self, x, policy):
@@ -246,6 +251,6 @@ class DistributionalQDeltaTFModel(TFModelV2):
     def get_delta_values(self, model_out):
         if hasattr(self, "delta"):
             d_out = self.delta(model_out)
-            return tf.reshape(d_out, [-1, 2, int(self.n_dunits/2)])
+            return tf.reshape(d_out, [-1, int(self.n_dunits/2), 2])
         else:
             return None

@@ -9,11 +9,12 @@ shared_base_model: true
 timesteps: 1000000
 gamma: 0.99
 beta: null
-initial_beta: 1.0
+initial_beta: 0.01  # Important to set small. Otherwise "slave" members get a "bump" at the beginning
 local_dir: none
 checkpoint_dir: null
 checkpoint_freq: 0
 buffer_size: 50000
+multi_binary: True
 entropy_lr: .0000625
 lr: .0000625
 adam_epsilon: .00015
@@ -24,7 +25,7 @@ noisy: false
 prioritized_replay: false
 n_step: 1
 target_network_update_freq: 8000
-learning_starts: 0
+learning_starts: 20000
 rollout_fragment_length: 4
 train_batch_size: 32
 exploration_config:
@@ -66,7 +67,7 @@ env:
 #        - TutankhamNoFrameskip-v4
 #        - WizardOfWorNoFrameskip-v4
 ensemble_size:
-  grid_search: [4, 8]
+  grid_search: [2, 3,4]
 div_type:
   grid_search: [action, state]
 target_div:

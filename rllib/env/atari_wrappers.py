@@ -313,5 +313,6 @@ def wrap_deepmind(env, dim=84, framestack=True):
     # env = ScaledFloatFrame(env)  # TODO: use for dqn?
     # env = ClipRewardEnv(env)  # reward clipping is handled by policy eval
     if framestack:
-        env = FrameStack(env, 4)
+        # TODO: reduce frame stack to prevent discrimination over-fitting
+        env = FrameStack(env, 2)
     return env
