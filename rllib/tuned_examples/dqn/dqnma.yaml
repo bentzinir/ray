@@ -8,11 +8,12 @@ debug: False
 framework: tf
 shared_base_model: true
 ensemble_size: 1
+multi_binary: True
 timesteps: 1000000
 gamma: 0.99
 batch_size: 256
 beta: None
-initial_beta: 0.0001
+initial_beta: 0.01
 local_dir: none
 checkpoint_dir: None
 checkpoint_freq: 0

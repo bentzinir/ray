@@ -169,7 +169,9 @@ def build_q_model(policy, obs_space, action_space, config):
         initial_beta=config["initial_beta"],
         beta=config["beta"],
         target_div=config["target_div"],
-        shared_base=base_script.BASE_MODEL["main"])
+        shared_base=base_script.BASE_MODEL["main"],
+        ensemble_size=config["ensemble_size"],
+        multi_binary=config["multi_binary"])
 
     policy.target_q_model = ModelCatalog.get_model_v2(
         obs_space=obs_space,
@@ -195,7 +197,10 @@ def build_q_model(policy, obs_space, action_space, config):
         initial_beta=config["initial_beta"],
         beta=config["beta"],
         target_div=config["target_div"],
-        shared_base=base_script.BASE_MODEL["target"])
+        shared_base=base_script.BASE_MODEL["target"],
+        ensemble_size=config["ensemble_size"],
+        multi_binary=config["multi_binary"]
+    )
 
     policy.q_func_vars = policy.q_model.trainable_variables()
     policy.target_q_func_vars = policy.target_q_model.trainable_variables()
@@ -273,18 +278,25 @@ def build_q_losses(policy, model, _, train_batch):
             q_dist_tp1 * tf.expand_dims(q_tp1_best_one_hot_selection, -1), 1)
 
     # Apply ensemble diversity regularization
+    beta = model.beta
     if policy.config["div_type"] == 'action':
         # delta_t = tf.nn.log_softmax(train_batch["action_dist_inputs"], axis=1)
         delta_t = tf.nn.softmax(train_batch["action_dist_inputs"], axis=1)
         log_delta = tf.reduce_sum(one_hot_selection * delta_t, axis=1)
         log_delta = l_policy * log_delta
     elif policy.config["div_type"] == 'state':
-        # log_delta = tf.nn.log_softmax(delta_tp1, axis=1)
-        log_delta = tf.nn.softmax(delta_tp1, axis=1)
-        # we choose positive agent-based regularization in oppose to negative opponent-based pne
-        # log_delta = -tf.slice(log_delta, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
-        # log_delta = tf.slice(log_delta, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
-        log_delta = tf.slice(log_delta, begin=[0, OPPONENT_LABEL, 0], size=[-1, 1, -1])
+        if policy.config["multi_binary"]:
+            log_delta = tf.nn.log_softmax(delta_tp1, axis=2)
+            slice_size = tf.maximum(model.policy_id, 1)
+            # log_delta = -tf.slice(log_delta, begin=[0, 0, AGENT_LABEL], size=[-1, slice_size, 1])
+            log_delta = tf.slice(log_delta, begin=[0, 0, OPPONENT_LABEL], size=[-1, slice_size, 1])
+            beta = tf.slice(beta, begin=[0], size=[slice_size])
+            beta = tf.expand_dims(tf.expand_dims(beta, 0), -1)
+        else:
+            assert False, "Not implemented"
+            log_delta = tf.nn.log_softmax(delta_tp1, axis=1)
+            # log_delta = -tf.slice(log_delta, begin=[0, 0, AGENT_LABEL], size=[-1, -1, 1])
+            log_delta = tf.slice(log_delta, begin=[0, 0, OPPONENT_LABEL], size=[-1, -1, 1])
     elif policy.config["div_type"] == 'state_action':
         one_hot_3d = tf.tile(tf.expand_dims(one_hot_selection, axis=1), multiples=[1, 2, 1])
         delta_selected = tf.reduce_sum(one_hot_3d * delta_t, axis=2, keepdims=True)
@@ -293,7 +305,8 @@ def build_q_losses(policy, model, _, train_batch):
     else:
         raise ValueError
 
-    q_tp1_best -= model.beta * tf.squeeze(log_delta)
+    total_penalty = tf.reduce_sum(beta * log_delta, axis=1)
+    q_tp1_best -= tf.squeeze(total_penalty, axis=1)
 
     policy.q_loss = QLoss(
         q_t_selected, q_logits_t_selected, q_tp1_best, q_dist_tp1_best,
@@ -312,35 +325,68 @@ def build_q_losses(policy, model, _, train_batch):
         div_vec = div_vec * l_policy
         div_rate = tf.reduce_sum(div_vec) / l_count
     else:
-        if policy.config["div_type"] == 'state_action':
-            d_t = tf.reduce_sum(one_hot_3d * delta_t, axis=2)
-        elif policy.config["div_type"] == 'state':
-            d_t = tf.squeeze(delta_t, axis=2)
+        if policy.config["div_type"] == 'state':
+            if policy.config["multi_binary"]:
+                disc_label_mat = tf.stack([disc_label] * config["ensemble_size"], axis=1)
+                eq_policy_mat = tf.stack([eq_policy] * config["ensemble_size"], axis=1)
+                data_id_one_hot = tf.one_hot(train_batch["data_id"], config["ensemble_size"])
+
+                delta_loss_mat = tf.nn.sparse_softmax_cross_entropy_with_logits(disc_label_mat, delta_t)
+                total_opp_loss = tf.reduce_sum(data_id_one_hot * delta_loss_mat, axis=0)
+                total_agent_loss = tf.reduce_sum(eq_policy_mat * delta_loss_mat, axis=0)
+
+                total_opp_vec = tf.reduce_sum(data_id_one_hot, axis=0) + 1e-8
+                total_agent_vec = tf.reduce_sum(eq_policy_mat, axis=0) + 1e-8
+
+                mean_opp_loss = total_opp_loss / total_opp_vec
+                mean_agent_loss = total_agent_loss / total_agent_vec
+
+                mean_loss_vec = (mean_opp_loss + mean_agent_loss) / 2
+                sliced_loss_vec = tf.slice(mean_loss_vec, begin=[0], size=[slice_size])
+                delta_loss = tf.reduce_mean(sliced_loss_vec)
+
+                # Measure class accuracy
+                one_hot_or_eq = tf.cast(tf.cast(data_id_one_hot + eq_policy_mat, tf.bool), tf.float32)
+                hits_mat = tf.math.equal(disc_label_mat, tf.argmax(delta_t, axis=2, output_type=tf.int32))
+                masked_hits_mat = tf.cast(hits_mat, tf.float32) * one_hot_or_eq
+                total_hits_per_class = tf.reduce_sum(masked_hits_mat, axis=0)
+                total_instances_per_class = tf.reduce_sum(one_hot_or_eq, axis=0) + 1e-8
+                div_rate = total_hits_per_class / total_instances_per_class
+            else:
+                assert False, "Not implemented"
+                delta_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(disc_label, d_t)
+                delta_loss = tf.reduce_sum(leq_policy * delta_loss_vec) / leq_count
+                div_vec = tf.math.equal(disc_label, tf.argmax(d_t, axis=1, output_type=tf.int32))
+                div_vec = tf.cast(div_vec, tf.float32)
+                div_vec = div_vec * leq_policy
+                div_rate = tf.reduce_sum(div_vec) / leq_count
         else:
             raise ValueError
-        delta_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(disc_label, d_t)
-        delta_loss = tf.reduce_sum(leq_policy * delta_loss_vec) / leq_count
-        div_vec = tf.math.equal(disc_label, tf.argmax(d_t, axis=1, output_type=tf.int32))
-        div_vec = tf.cast(div_vec, tf.float32)
-        div_vec = div_vec * leq_policy
-        div_rate = tf.reduce_sum(div_vec) / leq_count
 
     # Auto adjust divergence coefficient
     beta_backup = tf.stop_gradient(model.target_div - div_rate)
-    beta_loss = - tf.reduce_mean(model.log_beta * beta_backup)
+    beta_loss = - model.log_beta * beta_backup
+
+    valid_rate = tf.cast(tf.math.greater_equal(total_instances_per_class, 1), tf.float32)
+    beta_loss = beta_loss * valid_rate
+
+    # slice beta of relevant classes
+    beta_loss = tf.slice(beta_loss, begin=[0], size=[slice_size])
+    beta_loss = tf.reduce_sum(beta_loss)
 
     # mask beta/delta loss for policy 0:
     if model.train_beta:
-        beta_loss = beta_loss * tf.cast(tf.math.not_equal(model.policy_id, 0), tf.float32)
+        beta_loss = tf.cond(model.policy_id > 0, lambda: beta_loss, lambda: 0.0)
     else:
         beta_loss = tf.constant(0.0)
-    delta_loss = delta_loss * tf.cast(tf.math.not_equal(model.policy_id, 0), tf.float32)
+    delta_loss = tf.cond(model.policy_id > 0, lambda : delta_loss, lambda : 0.0)
 
     policy.delta_loss = delta_loss
     policy.beta_loss = beta_loss
-    policy.beta_value = model.beta
     policy.target_div = model.target_div
-    policy.div_rate = div_rate
+    for m in range(policy.config["ensemble_size"]):
+        setattr(policy, f"beta_{m}", tf.reduce_mean(tf.slice(model.beta, begin=[m], size=[1])))
+        setattr(policy, f"div_rate_{m}", tf.reduce_mean(tf.slice(div_rate, begin=[m], size=[1])))
     policy.delta_penalty = log_delta
 
     return policy.q_loss.loss  # + delta_loss + beta_loss
@@ -399,17 +445,20 @@ def clip_gradients(policy, optimizer, loss):
 
 
 def build_q_stats(policy, batch):
-    return dict({
+    stats_dict = dict({
         "cur_lr": tf.cast(policy.cur_lr, tf.float64),
         # nirbz: ensemble learning add ons
         "delta_loss": policy.delta_loss,
         "beta_loss": policy.beta_loss,
-        "beta_value": policy.beta_value,
         "target_div": tf.constant(policy.target_div),
-        "div_rate": policy.div_rate,
-        "delta_penalty": policy.delta_penalty,
+        "delta_penalty": tf.reduce_mean(policy.delta_penalty),
         "policy_id": policy.model.policy_id,
     }, **policy.q_loss.stats)
+
+    for m in range(policy.config["ensemble_size"]):
+        stats_dict[f"beta_{m}"] = getattr(policy, f"beta_{m}")
+        stats_dict[f"div_rate_{m}"] = getattr(policy, f"div_rate_{m}")
+    return stats_dict
 
 
 def setup_early_mixins(policy, obs_space, action_space, config):

@@ -139,6 +139,8 @@ DEFAULT_CONFIG = with_common_config({
     "div_type": None,
     "target_div": None,
     "initial_beta": None,
+    "ensemble_size": None,
+    "multi_binary": False,
 })
 # __sphinx_doc_end__
 # yapf: enable
