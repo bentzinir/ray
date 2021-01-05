@@ -9,7 +9,7 @@ from ray.rllib.env import BaseEnv
 from ray.rllib.policy import Policy
 from typing import Dict
 from ray.rllib.examples.env.multi_agent import make_multiagent
-from ray.rllib.examples.env.maze_env import MazeEnv
+import ray.rllib.examples.env.my_envs
 import numpy as np
 from ray.rllib.models.tf.visionnet import VisionNetwork
 from ray.rllib.examples.parser_args import get_config
