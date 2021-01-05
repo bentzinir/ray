@@ -248,6 +248,7 @@ class DistributionalQDeltaTFModel(TFModelV2):
 
         return self.state_value_head(model_out)
 
+    # Check
     def get_delta_values(self, model_out):
         if hasattr(self, "delta"):
             d_out = self.delta(model_out)
