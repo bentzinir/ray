@@ -305,6 +305,7 @@ def build_q_losses(policy, model, _, train_batch):
     else:
         raise ValueError
 
+    # Todo: Replace with Mean?
     total_penalty = tf.reduce_sum(beta * log_delta, axis=1)
     q_tp1_best -= tf.squeeze(total_penalty, axis=1)
 

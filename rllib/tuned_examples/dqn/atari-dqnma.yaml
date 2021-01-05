@@ -13,7 +13,7 @@ initial_beta: 0.01  # Important to set small. Otherwise "slave" members get a "b
 local_dir: none
 checkpoint_dir: null
 checkpoint_freq: 0
-buffer_size: 50000
+buffer_size: 200000
 multi_binary: True
 entropy_lr: .0000625
 lr: .0000625
