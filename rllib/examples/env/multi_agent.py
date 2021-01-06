@@ -3,6 +3,7 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.tests.test_rollout_worker import MockEnv, MockEnv2
 import numpy as np
 from collections import deque
+import cv2
 
 
 def make_multiagent():
@@ -25,9 +26,33 @@ def make_multiagent():
             self.action_space = self.agents[0].action_space
             self.reward_queues = [deque(maxlen=50) for _ in range(self.nagents)]
             self.episode_rewards = [0 for _ in range(self.nagents)]
-            self.len_queues = [deque(maxlen=50) for _ in range(self.nagents)]
+            self.len_queues = [deque(maxlen=15) for _ in range(self.nagents)]
             self.episode_lens = [0 for _ in range(self.nagents)]
             self.nresets = [0 for _ in range(self.nagents)]
+            self.visualize = config.get("visualize", False)
+            self.num_timesteps = 0
+            if self.visualize:
+                self.current_episode_obs_list = [[] for _ in range(self.nagents)]
+                self.episode_obs_list = [[] for _ in range(self.nagents)]
+
+        def create_episode_figure(self):
+            frames = []
+            sample_obs = self.episode_obs_list[0][0]
+            for e in range(self.nagents):
+                n = len(self.episode_obs_list[e])
+                weights = np.linspace(200, 64, n)
+                cum_frame = np.zeros(shape=sample_obs.shape, dtype=np.float32)
+                for ob, wt in zip(self.episode_obs_list[e], weights):
+                    ob_mask = ob.sum(2) > 0
+                    cum_frame[ob_mask] = wt
+                dynamic_mask = cum_frame.sum(2)>0
+                frame = self.agents[e].env.bg.copy()
+                frame[dynamic_mask] = cum_frame[dynamic_mask]
+                frame = cv2.resize(frame, dsize=(500, 500), interpolation=cv2.INTER_NEAREST)
+                frames.append(frame)
+
+            tiled_figure = np.concatenate(frames, 1).astype(np.uint8)
+            cv2.imwrite(f"/home/nir/ray_results/maze/figures/figure_{self.num_timesteps}.jpg", tiled_figure)
 
         def reset_i(self, i):
             self.nresets[i] += 1
@@ -49,6 +74,7 @@ def make_multiagent():
             return f"{idx}_{self.nresets[idx]}"
 
         def step(self, action_dict):
+            self.num_timesteps += 1
             obs, rew, done, info = {}, {}, {}, {}
             for agent_id, action in action_dict.items():
                 idx = self.id2idx(agent_id)
@@ -59,6 +85,10 @@ def make_multiagent():
                 self.episode_lens[idx] += 1
                 info[agent_id]['ep_R'] = np.nanmean(self.reward_queues[idx])
                 info[agent_id]['ep_T'] = np.nanmean(self.len_queues[idx])
+                if self.visualize:
+                    self.current_episode_obs_list[idx].append(self.agents[idx].env._get_dynamic_mask())
+                if self.num_timesteps % 1000 == 0:
+                    self.create_episode_figure()
                 if done[agent_id]:
                     self.dones.add(idx)
                     self.reward_queues[idx].append(self.episode_rewards[idx])
@@ -70,6 +100,9 @@ def make_multiagent():
                     rew[self.idx2id(idx)] = 0
                     done[self.idx2id(idx)] = False
                     info[self.idx2id(idx)] = {}
+                    if self.visualize:
+                        self.episode_obs_list[idx] = self.current_episode_obs_list[idx]
+                        self.current_episode_obs_list[idx] = []
             done["__all__"] = len(self.dones) == self.nagents
             return obs, rew, done, info
 

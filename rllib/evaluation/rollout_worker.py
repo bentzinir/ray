@@ -42,6 +42,7 @@ from ray.rllib.utils.types import EnvType, AgentID, PolicyID, EnvConfigDict, \
 from ray.util.debug import log_once, disable_log_once_globally, \
     enable_periodic_logging
 from ray.util.iter import ParallelIteratorWorker
+import ray.rllib.examples.env.my_envs
 
 if TYPE_CHECKING:
     from ray.rllib.agents.callbacks import DefaultCallbacks

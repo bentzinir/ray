@@ -1,0 +1,45 @@
+num_cpus: 1
+num_gpus: 1
+num_workers: 0
+local_mode: false
+verbose: 1
+visualize: true
+debug: False
+framework: tf
+shared_base_model: true
+timesteps: 1000000
+gamma: 0.9
+beta: null
+initial_beta: 0.01  # Important to set small. Otherwise "slave" members get a "bump" at the beginning
+local_dir: none
+checkpoint_dir: null
+checkpoint_freq: 0
+buffer_size: 20000
+multi_binary: True
+entropy_lr: .000625
+lr: .000625
+adam_epsilon: .00015
+double_q: true
+dueling: false
+num_atoms: 1
+noisy: false
+prioritized_replay: false
+n_step: 1
+target_network_update_freq: 800
+learning_starts: 1000
+rollout_fragment_length: 4
+train_batch_size: 32
+exploration_config:
+  epsilon_timesteps: 2000
+  initial_epsilon: 0.1
+  final_epsilon: 0.1
+prioritized_replay_alpha: 0.5
+final_prioritized_replay_beta: 1.0
+prioritized_replay_beta_annealing_timesteps: 2000000
+timesteps_per_iteration: 1000
+vis_sleep: 0.0
+grid_repeats: 1
+
+env: 'maze-v0'
+div_type: 'state'
+target_div: 0.6

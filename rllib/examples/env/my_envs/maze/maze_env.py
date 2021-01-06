@@ -11,22 +11,21 @@ logger = logging.getLogger(__name__)
 # Observation space [x_pos, y_pos, wind_direction]
 # Action space: stay still OR move in current wind direction
 MAP_DATA = """
-###########################
-#            S            #
-#                         #
-#                         #
-#                         #
-#                         #
-#                         #
-#                         #
-#                         #
-#                         #
-#                         #
-#                         #
-#                         #
-#                         #
-#            F            #
-###########################"""
+###############
+#      S      #
+#             #
+#             #
+#             #
+#             #
+# # # ### # # #
+#             #
+#             #
+#             #
+#             #
+#             #
+#             #
+#      F      #
+###############"""
 
 
 class MazeEnv(gym.Env):
@@ -43,8 +42,9 @@ class MazeEnv(gym.Env):
                     self.end_pos = (x, y)
         logger.info("Start pos {} end pos {}".format(self.start_pos,
                                                      self.end_pos))
-        if "spatial" in env_config and env_config["spatial"]:
-            self.observation_space = Box(0, 255, shape=(42, 42, 3), dtype=np.uint8)
+        self.im_size = 42
+        if not env_config.get("compact", False):
+            self.observation_space = Box(0, 255, shape=(self.im_size, self.im_size, 3), dtype=np.uint8)
             self.spatial = True
         else:
             self.observation_space = Box(0, 1, shape=(2,), dtype=np.float32)
@@ -106,32 +106,33 @@ class MazeEnv(gym.Env):
         self.member_list = list(set(self.member_list + [member]))
         self.member_list.sort()
 
-    def member_color(self):
-        if self.member == 0:
+    def member_color(self, color_idx):
+        if color_idx == 0:
+            return [0, 255, 0]  # green
+        elif color_idx == 1:
             return [255, 0, 0]  # red
-        elif self.member == 1:
+        elif color_idx == 2:
             return [255, 128, 0]  # orange
-        elif self.member == 2:
+        elif color_idx == 3:
             return [255, 255, 0]  # yellow
-        elif self.member == 3:
+        elif color_idx == 4:
             return [128, 255, 0]  # green
         else:
             raise ValueError
 
-    def _get_image(self, resize=False, alpha=0.995):
+    def _get_image(self, resize=False, color_idx=0, s=None):
+        s = s or self.im_size
         frame_t = self.bg.copy()
-        frame_t[self.pos] =  [0, 255, 0] #self.member_color()
-        # frame[self.end_pos] = [0, 0, 255]
-        if not self.member in self.frames:
-            self.frames[self.member] = self.bg.copy()
-
-        self.frames[self.member] = (alpha * self.frames[self.member] + (1 - alpha) * frame_t).astype(np.uint8)
-        # self.frame[self.pos] = self.member_color()
-        frames = [frame_t] + [self.frames[i] for i in self.member_list]
-        frames = np.concatenate(frames, axis=0)
+        color = self.member_color(color_idx)
+        frame_t[self.pos] = color
         if resize:
-            frames = cv2.resize(frames, dsize=(42, 42), interpolation=cv2.INTER_NEAREST)
-        return frames
+            frame_t = cv2.resize(frame_t, dsize=(s, s), interpolation=cv2.INTER_NEAREST)
+        return frame_t
+
+    def _get_dynamic_mask(self):
+        frame = np.zeros_like(self.bg.copy())
+        frame[self.pos] = [1, 1, 1]
+        return frame
 
     def render(self, mode='human'):
         img = self._get_image()

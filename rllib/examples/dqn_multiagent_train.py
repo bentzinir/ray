@@ -1,5 +1,6 @@
 import argparse
 import gym
+import ray.rllib.examples.env.my_envs
 import ray
 from ray import tune
 from ray.rllib.policy.sample_batch import SampleBatch
@@ -9,7 +10,6 @@ from ray.rllib.env import BaseEnv
 from ray.rllib.policy import Policy
 from typing import Dict
 from ray.rllib.examples.env.multi_agent import make_multiagent
-import ray.rllib.examples.env.my_envs
 import numpy as np
 from ray.rllib.models.tf.visionnet import VisionNetwork
 from ray.rllib.examples.parser_args import get_config
@@ -32,28 +32,7 @@ def base_model_init():
 
 
 def callback_builder():
-
     class MyCallbacks(DefaultCallbacks):
-
-        def on_episode_start(self, worker: RolloutWorker, base_env: BaseEnv,
-                             policies: Dict[str, Policy],
-                             episode: MultiAgentEpisode, **kwargs):
-            pass
-
-        def on_episode_step(self, worker: RolloutWorker, base_env: BaseEnv,
-                            episode: MultiAgentEpisode, **kwargs):
-            pass
-
-        def on_postprocess_trajectory(
-            self, worker: RolloutWorker, episode: MultiAgentEpisode,
-            agent_id: str, policy_id: str, policies: Dict[str, Policy],
-            postprocessed_batch: SampleBatch,
-            original_batches: Dict[str, SampleBatch], **kwargs):
-            pass
-
-        def on_sample_end(self, worker: RolloutWorker, samples: SampleBatch, **kwargs):
-            pass
-
         def on_episode_end(self, worker: RolloutWorker, base_env: BaseEnv,
                            policies: Dict[str, Policy], episode: MultiAgentEpisode,
                            **kwargs):
@@ -80,7 +59,8 @@ def build_trainer_config(config):
         num_policies = max(config["ensemble_size"]['grid_search'])
     config["callbacks"] = callback_builder()
     config["env_config"] = {"N": config["ensemble_size"],
-                            "env_id": config["env"]}
+                            "env_id": config["env"],
+                            "visualize": config.get('visualize', False)}
     config["env"] = make_multiagent()
     config["multiagent"] = {
         "policies": {"policy_{}".format(i): (None, obs_space, act_space, {}) for i in range(num_policies)},

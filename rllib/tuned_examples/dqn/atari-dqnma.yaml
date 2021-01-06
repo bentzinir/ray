@@ -3,6 +3,7 @@ num_gpus: 1
 num_workers: 0
 local_mode: false
 verbose: 1
+visualize: false
 debug: False
 framework: tf
 shared_base_model: true
