@@ -20,7 +20,7 @@ multi_binary: True
 entropy_lr: .0000625
 lr: .0000625
 adam_epsilon: .00015
-double_q: false
+double_q: true
 dueling: false
 num_atoms: 1
 noisy: false
