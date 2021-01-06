@@ -87,7 +87,7 @@ def make_multiagent():
                 info[agent_id]['ep_T'] = np.nanmean(self.len_queues[idx])
                 if self.visualize:
                     self.current_episode_obs_list[idx].append(self.agents[idx].env._get_dynamic_mask())
-                if self.num_timesteps % 1000 == 0:
+                if self.visualize and self.num_timesteps % 1000 == 0:
                     self.create_episode_figure()
                 if done[agent_id]:
                     self.dones.add(idx)
