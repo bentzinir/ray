@@ -15,6 +15,7 @@ local_dir: none
 checkpoint_dir: null
 checkpoint_freq: 0
 buffer_size: 20000
+tail_queue_size: 2000
 multi_binary: True
 entropy_lr: .000625
 lr: .000625

@@ -141,6 +141,7 @@ DEFAULT_CONFIG = with_common_config({
     "initial_beta": None,
     "ensemble_size": None,
     "multi_binary": False,
+    "tail_queue_size": None,
 })
 # __sphinx_doc_end__
 # yapf: enable
@@ -260,6 +261,7 @@ def execution_plan(workers, config):
         replay_batch_size=config["train_batch_size"],
         replay_mode=config["multiagent"]["replay_mode"],
         replay_sequence_length=config["replay_sequence_length"],
+        tail_queue_size=config["tail_queue_size"],
         **prio_args)
 
     rollouts = ParallelRollouts(workers, mode="bulk_sync")

@@ -14,6 +14,7 @@ from ray.util.iter import ParallelIteratorWorker
 from ray.rllib.utils.timer import TimerStat
 from ray.rllib.utils.window_stat import WindowStat
 from ray.rllib.utils.types import SampleBatchType
+from collections import deque
 
 # Constant that represents all policies in lockstep replay mode.
 _ALL_POLICIES = "__all__"
@@ -98,7 +99,7 @@ class ReplayBuffer:
 @DeveloperAPI
 class PrioritizedReplayBuffer(ReplayBuffer):
     @DeveloperAPI
-    def __init__(self, size: int, alpha: float):
+    def __init__(self, size: int, alpha: float, tail_queue_size: int):
         """Create Prioritized Replay buffer.
 
         Args:
@@ -121,6 +122,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         self._it_min = MinSegmentTree(it_capacity)
         self._max_priority = 1.0
         self._prio_change_stats = WindowStat("reprio", 1000)
+        self._tail_queue = deque(maxlen=tail_queue_size)
 
     @DeveloperAPI
     def add(self, item: SampleBatchType, weight: float):
@@ -130,6 +132,10 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             weight = self._max_priority
         self._it_sum[idx] = weight**self._alpha
         self._it_min[idx] = weight**self._alpha
+
+        # add current observation to tail_queue
+        self._tail_queue.append(SampleBatch(obs_data_id=item.get("obs_data_id"),
+                                            obs=item[SampleBatch.CUR_OBS]))
 
     def _sample_proportional(self, num_items: int):
         res = []
@@ -171,6 +177,15 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             weights.extend([weight / max_weight] * count)
             batch_indexes.extend([idx] * count)
         batch = self._encode_sample(idxes)
+
+        # add a batch of fresh samples to train discrimination model
+        if len(self._tail_queue) > num_items:
+            fresh_idxes = random.sample(range(len(self._tail_queue)), k=num_items)
+            fresh_sample = SampleBatch.concat_samples([self._tail_queue[i] for i in fresh_idxes])
+            fresh_sample.decompress_if_needed()
+
+            batch["fresh_obs"] = fresh_sample["obs"]
+            batch["fresh_obs_data_id"] = fresh_sample["obs_data_id"]
 
         # Note: prioritization is not supported in lockstep replay mode.
         if isinstance(batch, SampleBatch):
@@ -235,10 +250,12 @@ class LocalReplayBuffer(ParallelIteratorWorker):
                  prioritized_replay_beta=0.4,
                  prioritized_replay_eps=1e-6,
                  replay_mode="independent",
-                 replay_sequence_length=1):
+                 replay_sequence_length=1,
+                 tail_queue_size=None):
         self.replay_starts = learning_starts // num_shards
         self.buffer_size = buffer_size // num_shards
         self.replay_batch_size = replay_batch_size
+        self.tail_queue_size = tail_queue_size
         self.prioritized_replay_beta = prioritized_replay_beta
         self.prioritized_replay_eps = prioritized_replay_eps
         self.replay_mode = replay_mode
@@ -264,7 +281,7 @@ class LocalReplayBuffer(ParallelIteratorWorker):
 
         def new_buffer():
             return PrioritizedReplayBuffer(
-                self.buffer_size, alpha=prioritized_replay_alpha)
+                self.buffer_size, alpha=prioritized_replay_alpha, tail_queue_size=tail_queue_size)
 
         self.replay_buffers = collections.defaultdict(new_buffer)
 

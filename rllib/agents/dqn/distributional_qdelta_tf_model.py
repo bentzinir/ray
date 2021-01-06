@@ -102,7 +102,7 @@ class DistributionalQDeltaTFModel(TFModelV2):
                         action_out = tf.keras.layers.Dense(
                             units=q_hiddens[i],
                             activation=tf.nn.relu,
-                            name="hidden_%d" % i)(action_out)
+                            name="{}_hidden_{}".format(prefix, i))(action_out)
             else:
                 # Avoid postprocessing the outputs. This enables custom models
                 # to be used for parametric action DQN.

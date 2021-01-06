@@ -240,14 +240,16 @@ def build_q_losses(policy, model, _, train_batch):
         train_batch[SampleBatch.NEXT_OBS],
         explore=False)
 
+    _, _, _, fresh_delta_t = compute_q_values(
+        policy,
+        policy.q_model,
+        train_batch["fresh_obs"],
+        explore=False)
+
     # placeholders
-    l_policy = tf.cast(tf.math.less(train_batch["data_id"], model.policy_id), tf.float32)
-    leq_policy = tf.cast(tf.math.less_equal(train_batch["data_id"], model.policy_id), tf.float32)
-    eq_policy = tf.cast(tf.math.equal(train_batch["data_id"], model.policy_id), tf.float32)
+    l_policy = tf.cast(tf.math.less(train_batch["fresh_obs_data_id"], model.policy_id), tf.float32)
+    eq_policy = tf.cast(tf.math.equal(train_batch["fresh_obs_data_id"], model.policy_id), tf.float32)
     disc_label = tf.cast(OPPONENT_LABEL * l_policy + AGENT_LABEL * eq_policy, tf.int32)
-    # opp_action_dist = tf.expand_dims(l_policy, 1) * train_batch["action_dist_inputs"]
-    l_count = 1e-8 + tf.reduce_sum(l_policy)
-    leq_count = 1e-8 + tf.reduce_sum(leq_policy)
 
     # q scores for actions which we know were selected in the given state.
     one_hot_selection = tf.one_hot(
@@ -279,33 +281,16 @@ def build_q_losses(policy, model, _, train_batch):
 
     # Apply ensemble diversity regularization
     beta = model.beta
-    if policy.config["div_type"] == 'action':
-        # delta_t = tf.nn.log_softmax(train_batch["action_dist_inputs"], axis=1)
-        delta_t = tf.nn.softmax(train_batch["action_dist_inputs"], axis=1)
-        log_delta = tf.reduce_sum(one_hot_selection * delta_t, axis=1)
-        log_delta = l_policy * log_delta
-    elif policy.config["div_type"] == 'state':
-        if policy.config["multi_binary"]:
-            log_delta = tf.nn.log_softmax(delta_tp1, axis=2)
-            slice_size = tf.maximum(model.policy_id, 1)
-            # log_delta = -tf.slice(log_delta, begin=[0, 0, AGENT_LABEL], size=[-1, slice_size, 1])
-            log_delta = tf.slice(log_delta, begin=[0, 0, OPPONENT_LABEL], size=[-1, slice_size, 1])
-            beta = tf.slice(beta, begin=[0], size=[slice_size])
-            beta = tf.expand_dims(tf.expand_dims(beta, 0), -1)
-        else:
-            assert False, "Not implemented"
-            log_delta = tf.nn.log_softmax(delta_tp1, axis=1)
-            # log_delta = -tf.slice(log_delta, begin=[0, 0, AGENT_LABEL], size=[-1, -1, 1])
-            log_delta = tf.slice(log_delta, begin=[0, 0, OPPONENT_LABEL], size=[-1, -1, 1])
-    elif policy.config["div_type"] == 'state_action':
-        one_hot_3d = tf.tile(tf.expand_dims(one_hot_selection, axis=1), multiples=[1, 2, 1])
-        delta_selected = tf.reduce_sum(one_hot_3d * delta_t, axis=2, keepdims=True)
-        log_delta = tf.nn.log_softmax(delta_selected, axis=1)
-        log_delta = -tf.slice(log_delta, begin=[0, AGENT_LABEL, 0], size=[-1, 1, -1])
+    if policy.config["div_type"] == 'state':
+        log_delta = tf.nn.log_softmax(delta_tp1, axis=2)
+        slice_size = tf.maximum(model.policy_id, 1)
+        # log_delta = -tf.slice(log_delta, begin=[0, 0, AGENT_LABEL], size=[-1, slice_size, 1])
+        log_delta = tf.slice(log_delta, begin=[0, 0, OPPONENT_LABEL], size=[-1, slice_size, 1])
+        beta = tf.slice(beta, begin=[0], size=[slice_size])
+        beta = tf.expand_dims(tf.expand_dims(beta, 0), -1)
     else:
         raise ValueError
 
-    # Todo: Replace with Mean?
     total_penalty = tf.reduce_sum(beta * log_delta, axis=1)
     q_tp1_best -= tf.squeeze(total_penalty, axis=1)
 
@@ -317,50 +302,33 @@ def build_q_losses(policy, model, _, train_batch):
         config["v_min"], config["v_max"])
 
     # Train diversity model
-    if policy.config["div_type"] == 'action':
-        delta_loss = 0  # non-parametric diversity regularization mode
-        div_vec = tf.math.not_equal(
-            tf.argmax(q_t, axis=1, output_type=tf.int32),
-            tf.argmax(train_batch["action_dist_inputs"], axis=1, output_type=tf.int32))
-        div_vec = tf.cast(div_vec, tf.float32)
-        div_vec = div_vec * l_policy
-        div_rate = tf.reduce_sum(div_vec) / l_count
-    else:
-        if policy.config["div_type"] == 'state':
-            if policy.config["multi_binary"]:
-                disc_label_mat = tf.stack([disc_label] * config["ensemble_size"], axis=1)
-                eq_policy_mat = tf.stack([eq_policy] * config["ensemble_size"], axis=1)
-                data_id_one_hot = tf.one_hot(train_batch["data_id"], config["ensemble_size"])
+    if policy.config["div_type"] == 'state':
+        if policy.config["multi_binary"]:
+            disc_label_mat = tf.stack([disc_label] * config["ensemble_size"], axis=1)
+            eq_policy_mat = tf.stack([eq_policy] * config["ensemble_size"], axis=1)
+            data_id_one_hot = tf.one_hot(train_batch["fresh_obs_data_id"], config["ensemble_size"])
 
-                delta_loss_mat = tf.nn.sparse_softmax_cross_entropy_with_logits(disc_label_mat, delta_t)
-                total_opp_loss = tf.reduce_sum(data_id_one_hot * delta_loss_mat, axis=0)
-                total_agent_loss = tf.reduce_sum(eq_policy_mat * delta_loss_mat, axis=0)
+            delta_loss_mat = tf.nn.sparse_softmax_cross_entropy_with_logits(disc_label_mat, fresh_delta_t)
+            total_opp_loss = tf.reduce_sum(data_id_one_hot * delta_loss_mat, axis=0)
+            total_agent_loss = tf.reduce_sum(eq_policy_mat * delta_loss_mat, axis=0)
 
-                total_opp_vec = tf.reduce_sum(data_id_one_hot, axis=0) + 1e-8
-                total_agent_vec = tf.reduce_sum(eq_policy_mat, axis=0) + 1e-8
+            total_opp_vec = tf.reduce_sum(data_id_one_hot, axis=0) + 1e-8
+            total_agent_vec = tf.reduce_sum(eq_policy_mat, axis=0) + 1e-8
 
-                mean_opp_loss = total_opp_loss / total_opp_vec
-                mean_agent_loss = total_agent_loss / total_agent_vec
+            mean_opp_loss = total_opp_loss / total_opp_vec
+            mean_agent_loss = total_agent_loss / total_agent_vec
 
-                mean_loss_vec = (mean_opp_loss + mean_agent_loss) / 2
-                sliced_loss_vec = tf.slice(mean_loss_vec, begin=[0], size=[slice_size])
-                delta_loss = tf.reduce_mean(sliced_loss_vec)
+            mean_loss_vec = (mean_opp_loss + mean_agent_loss) / 2
+            sliced_loss_vec = tf.slice(mean_loss_vec, begin=[0], size=[slice_size])
+            delta_loss = tf.reduce_mean(sliced_loss_vec)
 
-                # Measure class accuracy
-                one_hot_or_eq = tf.cast(tf.cast(data_id_one_hot + eq_policy_mat, tf.bool), tf.float32)
-                hits_mat = tf.math.equal(disc_label_mat, tf.argmax(delta_t, axis=2, output_type=tf.int32))
-                masked_hits_mat = tf.cast(hits_mat, tf.float32) * one_hot_or_eq
-                total_hits_per_class = tf.reduce_sum(masked_hits_mat, axis=0)
-                total_instances_per_class = tf.reduce_sum(one_hot_or_eq, axis=0) + 1e-8
-                div_rate = total_hits_per_class / total_instances_per_class
-            else:
-                assert False, "Not implemented"
-                delta_loss_vec = tf.nn.sparse_softmax_cross_entropy_with_logits(disc_label, d_t)
-                delta_loss = tf.reduce_sum(leq_policy * delta_loss_vec) / leq_count
-                div_vec = tf.math.equal(disc_label, tf.argmax(d_t, axis=1, output_type=tf.int32))
-                div_vec = tf.cast(div_vec, tf.float32)
-                div_vec = div_vec * leq_policy
-                div_rate = tf.reduce_sum(div_vec) / leq_count
+            # Measure class accuracy
+            one_hot_or_eq = tf.cast(tf.cast(data_id_one_hot + eq_policy_mat, tf.bool), tf.float32)
+            hits_mat = tf.math.equal(disc_label_mat, tf.argmax(fresh_delta_t, axis=2, output_type=tf.int32))
+            masked_hits_mat = tf.cast(hits_mat, tf.float32) * one_hot_or_eq
+            total_hits_per_class = tf.reduce_sum(masked_hits_mat, axis=0)
+            total_instances_per_class = tf.reduce_sum(one_hot_or_eq, axis=0) + 1e-8
+            div_rate = total_hits_per_class / total_instances_per_class
         else:
             raise ValueError
 
@@ -520,13 +488,18 @@ def compute_q_values(policy, model, obs, explore):
 
 def _ensemble_postprocessing(policy, batch, other_batches):
     # uninitialized call
-    assert "data_id" not in batch, "contaminated batch"
+    if "fresh_obs" not in batch:
+        batch["fresh_obs"] = np.zeros_like(batch[SampleBatch.CUR_OBS])
+    if "fresh_obs_data_id" not in batch:
+        batch["fresh_obs_data_id"] = np.zeros_like(batch[SampleBatch.REWARDS], dtype=np.int32)
+
+    assert "obs_data_id" not in batch, "contaminated batch"
     if "agent_id" not in batch:
-        batch["data_id"] = np.zeros_like(batch[SampleBatch.REWARDS], dtype=np.int32)
+        batch["obs_data_id"] = np.zeros_like(batch[SampleBatch.REWARDS], dtype=np.int32)
     else:
         assert len(set(batch["agent_id"])) == 1
         policy_id = int(batch["agent_id"][0][0])
-        batch["data_id"] = np.array([policy_id]*batch.count, dtype=np.int32)
+        batch["obs_data_id"] = np.array([policy_id]*batch.count, dtype=np.int32)
         if not policy.model.updated_policy_id:
             policy.model.update_policy_id(policy_id, policy=policy)
         # update the target divergence of the primary agent to a negative value. This forces beta to go to zero no
